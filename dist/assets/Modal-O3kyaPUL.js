@@ -1,0 +1,17 @@
+let s=null,p=null;function g({title:e="",content:l="",buttons:c=[],size:b="md",closable:o=!0,onClose:r=null}={}){s&&i(s),p=document.activeElement;const t=document.createElement("div");t.className="modal-overlay",t.setAttribute("role","dialog"),t.setAttribute("aria-modal","true"),e&&t.setAttribute("aria-labelledby","modal-title");const a=document.createElement("div");a.className=`modal modal-${b}`;let v="";e&&(v=`
+            <div class="modal-header">
+                <h2 id="modal-title" class="modal-title">${C(e)}</h2>
+                ${o?`
+                    <button class="modal-close" aria-label="Close modal">
+                        <svg viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                        </svg>
+                    </button>
+                `:""}
+            </div>
+        `),a.innerHTML=`
+        ${v}
+        <div class="modal-content"></div>
+        ${c.length>0?'<div class="modal-footer"></div>':""}
+    `;const h=a.querySelector(".modal-content");if(typeof l=="string"?h.innerHTML=l:l instanceof HTMLElement&&h.appendChild(l),c.length>0){const n=a.querySelector(".modal-footer");c.forEach(({label:u,onClick:d,variant:f="secondary",disabled:y=!1})=>{const m=document.createElement("button");m.className=`btn btn-${f}`,m.textContent=u,m.disabled=y,m.addEventListener("click",()=>{(d==null?void 0:d())!==!1&&i(t)}),n.appendChild(m)})}if(t.appendChild(a),o&&e){const n=a.querySelector(".modal-close");n==null||n.addEventListener("click",()=>i(t))}o&&t.addEventListener("click",n=>{n.target===t&&i(t)});const E=n=>{n.key==="Escape"&&o&&i(t)};document.addEventListener("keydown",E),t._onClose=r,t._escapeHandler=E,document.body.appendChild(t),document.body.classList.add("modal-open"),requestAnimationFrame(()=>{t.classList.add("modal-visible")});const L=a.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');return L.length>0&&L[0].focus(),t.addEventListener("keydown",n=>{if(n.key!=="Tab")return;const u=a.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'),d=u[0],f=u[u.length-1];n.shiftKey&&document.activeElement===d?(n.preventDefault(),f.focus()):!n.shiftKey&&document.activeElement===f&&(n.preventDefault(),d.focus())}),s=t,{close:()=>i(t),element:a,overlay:t}}function i(e=s){e&&(e.classList.remove("modal-visible"),e.classList.add("modal-hiding"),e._escapeHandler&&document.removeEventListener("keydown",e._escapeHandler),setTimeout(()=>{var l;(l=e._onClose)==null||l.call(e),e.parentNode&&e.parentNode.removeChild(e),document.querySelector(".modal-overlay")||document.body.classList.remove("modal-open"),p&&(p.focus(),p=null),s===e&&(s=null)},200))}function H({title:e="Confirm",message:l="Are you sure?",confirmLabel:c="Confirm",cancelLabel:b="Cancel",variant:o="primary"}={}){return new Promise(r=>{g({title:e,content:`<p>${C(l)}</p>`,size:"sm",buttons:[{label:b,variant:"secondary",onClick:()=>{r(!1)}},{label:c,variant:o,onClick:()=>{r(!0)}}],onClose:()=>r(!1)})})}function C(e){if(typeof e!="string")return"";const l=document.createElement("div");return l.textContent=e,l.innerHTML}export{H as a,i as c,g as s};
+//# sourceMappingURL=Modal-O3kyaPUL.js.map

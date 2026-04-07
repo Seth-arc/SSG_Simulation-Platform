@@ -1,0 +1,102 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+const WHITECELL_HTML_PATH = new URL('../../teams/blue/whitecell.html', import.meta.url);
+
+function extractIdsFromHtml(html) {
+    return new Set(
+        [...html.matchAll(/id="([^"]+)"/g)].map((match) => match[1])
+    );
+}
+
+function createFakeElement(id) {
+    return {
+        id,
+        value: '',
+        textContent: '',
+        listeners: {},
+        classList: {
+            add() {},
+            remove() {},
+            toggle() {}
+        },
+        addEventListener(type, callback) {
+            this.listeners[type] = callback;
+        }
+    };
+}
+
+function createFakeDocument(ids = []) {
+    const elements = Object.fromEntries(ids.map((id) => [id, createFakeElement(id)]));
+
+    return {
+        elements,
+        getElementById(id) {
+            return elements[id] || null;
+        }
+    };
+}
+
+async function loadWhiteCellModule() {
+    globalThis.__ESG_DISABLE_AUTO_INIT__ = true;
+    vi.resetModules();
+    return import('./whitecell.js');
+}
+
+describe('White Cell DOM contract', () => {
+    afterEach(() => {
+        vi.resetModules();
+        delete global.document;
+        delete global.window;
+        delete globalThis.__ESG_DISABLE_AUTO_INIT__;
+    });
+
+    it('matches the rendered White Cell HTML ids', async () => {
+        const html = readFileSync(WHITECELL_HTML_PATH, 'utf8');
+        const htmlIds = extractIdsFromHtml(html);
+        const { WHITE_CELL_DOM_IDS } = await loadWhiteCellModule();
+
+        expect(WHITE_CELL_DOM_IDS.filter((id) => !htmlIds.has(id))).toEqual([]);
+    });
+
+    it('binds the shipped White Cell controls to controller handlers', async () => {
+        const { WHITE_CELL_DOM_IDS, WhiteCellController, getWhiteCellDomContract } = await loadWhiteCellModule();
+        const fakeDocument = createFakeDocument(WHITE_CELL_DOM_IDS);
+        global.document = fakeDocument;
+
+        const controller = new WhiteCellController();
+        controller.startTimer = vi.fn();
+        controller.pauseTimer = vi.fn();
+        controller.resetTimer = vi.fn();
+        controller.regressPhase = vi.fn();
+        controller.advancePhase = vi.fn();
+        controller.regressMove = vi.fn();
+        controller.advanceMove = vi.fn();
+        controller.handleCommunicationSubmit = vi.fn();
+
+        controller.bindEventListeners();
+
+        expect(getWhiteCellDomContract(fakeDocument).missing).toEqual([]);
+
+        fakeDocument.elements.startTimerBtn.listeners.click();
+        fakeDocument.elements.pauseTimerBtn.listeners.click();
+        fakeDocument.elements.resetTimerBtn.listeners.click();
+        fakeDocument.elements.prevPhaseBtn.listeners.click();
+        fakeDocument.elements.nextPhaseBtn.listeners.click();
+        fakeDocument.elements.prevMoveBtn.listeners.click();
+        fakeDocument.elements.nextMoveBtn.listeners.click();
+        fakeDocument.elements.commForm.listeners.submit({
+            preventDefault() {},
+            currentTarget: fakeDocument.elements.commForm
+        });
+
+        expect(controller.startTimer).toHaveBeenCalledTimes(1);
+        expect(controller.pauseTimer).toHaveBeenCalledTimes(1);
+        expect(controller.resetTimer).toHaveBeenCalledTimes(1);
+        expect(controller.regressPhase).toHaveBeenCalledTimes(1);
+        expect(controller.advancePhase).toHaveBeenCalledTimes(1);
+        expect(controller.regressMove).toHaveBeenCalledTimes(1);
+        expect(controller.advanceMove).toHaveBeenCalledTimes(1);
+        expect(controller.handleCommunicationSubmit).toHaveBeenCalledTimes(1);
+    });
+});

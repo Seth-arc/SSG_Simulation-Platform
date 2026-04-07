@@ -1,0 +1,359 @@
+/**
+ * Grid and Layout Utilities
+ */
+
+/* Main layout */
+.app-layout {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.main-content {
+    flex: 1;
+    margin-left: var(--sidebar-width);
+    padding-top: var(--header-height);
+    transition: margin-left var(--transition-smooth);
+    background: var(--color-bg);
+    overflow-y: auto;
+}
+
+.sidebar-collapsed~.main-content {
+    margin-left: 64px;
+}
+
+@media (max-width: 768px) {
+    .main-content {
+        margin-left: 0;
+    }
+}
+
+/* Page container */
+.page-container {
+    padding: var(--space-6);
+    max-width: var(--max-content-width);
+    margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+    .page-container {
+        padding: var(--space-4);
+    }
+}
+
+/* Section styles */
+.content-section {
+    margin-bottom: var(--space-6);
+}
+
+.section-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: var(--space-4);
+    gap: var(--space-4);
+}
+
+.section-header-content {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+}
+
+.section-toggle {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--color-text-muted);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+.section-toggle:hover {
+    background-color: var(--color-surface-alt);
+    color: var(--color-text-secondary);
+}
+
+.section-toggle-icon {
+    width: 20px;
+    height: 20px;
+    transition: transform var(--transition-fast);
+}
+
+.section-collapsed .section-toggle-icon {
+    transform: rotate(-90deg);
+}
+
+.section-title-wrapper {
+    flex: 1;
+}
+
+.section-title {
+    font-family: var(--font-serif);
+    font-size: 1.75rem;
+    /* ~28px */
+    font-weight: 700;
+    color: var(--color-navy-deep);
+    margin: 0 0 4px 0;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+.section-description {
+    font-size: var(--text-sm);
+    color: var(--color-text-muted);
+    margin: var(--space-1) 0 0;
+}
+
+.section-actions {
+    display: flex;
+    gap: var(--space-2);
+    flex-shrink: 0;
+}
+
+.section-body {
+    transition: all var(--transition-fast);
+}
+
+.section-collapsed .section-body {
+    display: none;
+}
+
+/* Section variants */
+.section-card {
+    background-color: var(--color-surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-4);
+}
+
+.section-card .section-header {
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-3);
+    border-bottom: var(--border-width) solid var(--color-border-light);
+}
+
+.section-bordered {
+    border: var(--border-width) solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+}
+
+/* Grid layouts */
+.section-grid {
+    display: grid;
+    gap: var(--space-4);
+}
+
+.section-grid-1 {
+    grid-template-columns: 1fr;
+}
+
+.section-grid-2 {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.section-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.section-grid-4 {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.section-grid-gap-sm {
+    gap: var(--space-2);
+}
+
+.section-grid-gap-md {
+    gap: var(--space-4);
+}
+
+.section-grid-gap-lg {
+    gap: var(--space-6);
+}
+
+@media (max-width: 1024px) {
+
+    .section-grid-3,
+    .section-grid-4 {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 640px) {
+
+    .section-grid-2,
+    .section-grid-3,
+    .section-grid-4 {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Tabs */
+.tabbed-section {
+    width: 100%;
+}
+
+.tab-list {
+    display: flex;
+    border-bottom: var(--border-width-2) solid var(--color-border);
+    margin-bottom: var(--space-4);
+    overflow-x: auto;
+}
+
+.tab-button {
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-sm);
+    font-weight: var(--font-medium);
+    color: var(--color-text-muted);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.tab-button:hover {
+    color: var(--color-text-secondary);
+}
+
+.tab-button-active {
+    color: var(--color-navy);
+    border-bottom-color: var(--color-navy);
+}
+
+.tab-badge {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-xs);
+    background-color: var(--color-surface-alt);
+    border-radius: var(--radius-full);
+}
+
+.tab-button-active .tab-badge {
+    background-color: var(--color-navy-soft);
+    color: var(--color-navy);
+}
+
+.tab-panel {
+    animation: fadeIn var(--transition-fast);
+}
+
+.tab-panel[hidden] {
+    display: none;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* Utility classes */
+.flex {
+    display: flex;
+}
+
+.flex-col {
+    flex-direction: column;
+}
+
+.items-center {
+    align-items: center;
+}
+
+.items-start {
+    align-items: flex-start;
+}
+
+.items-end {
+    align-items: flex-end;
+}
+
+.justify-center {
+    justify-content: center;
+}
+
+.justify-between {
+    justify-content: space-between;
+}
+
+.justify-end {
+    justify-content: flex-end;
+}
+
+.gap-1 {
+    gap: var(--space-1);
+}
+
+.gap-2 {
+    gap: var(--space-2);
+}
+
+.gap-3 {
+    gap: var(--space-3);
+}
+
+.gap-4 {
+    gap: var(--space-4);
+}
+
+.gap-6 {
+    gap: var(--space-6);
+}
+
+.p-2 {
+    padding: var(--space-2);
+}
+
+.p-4 {
+    padding: var(--space-4);
+}
+
+.p-6 {
+    padding: var(--space-6);
+}
+
+.mb-2 {
+    margin-bottom: var(--space-2);
+}
+
+.mb-4 {
+    margin-bottom: var(--space-4);
+}
+
+.mb-6 {
+    margin-bottom: var(--space-6);
+}
+
+.w-full {
+    width: 100%;
+}
+
+.h-full {
+    height: 100%;
+}
+
+.hidden {
+    display: none;
+}
+
+.visible {
+    display: block;
+}

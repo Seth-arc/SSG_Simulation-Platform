@@ -1,0 +1,739 @@
+/**
+ * Notetaker Role Controller
+ * ESG Economic Statecraft Simulation Platform v2.0
+ *
+ * Handles Notetaker specific functionality:
+ * - Quick capture (notes, moments, quotes)
+ * - Team dynamics tracking
+ * - Alliance tracking
+ * - Timeline view
+ * - Read-only action viewing
+ */
+
+import { sessionStore } from '../stores/session.js';
+import { database } from '../services/database.js';
+import { createLogger } from '../utils/logger.js';
+import { showToast } from '../components/ui/Toast.js';
+import { showInlineLoader } from '../components/ui/Loader.js';
+import { createBadge, createStatusBadge, createPriorityBadge } from '../components/ui/Badge.js';
+import { formatDateTime, formatRelativeTime } from '../utils/formatting.js';
+import { debounce } from '../utils/debounce.js';
+import { resolveTeamContext } from '../core/teamContext.js';
+
+const logger = createLogger('Notetaker');
+
+export const DEFAULT_DYNAMICS_DATA = {
+    emergingLeaders: '',
+    decisionStyle: '',
+    frictionLevel: '5',
+    frictionSources: '',
+    consensusLevel: '5',
+    dynamicsSummary: ''
+};
+
+export const DEFAULT_ALLIANCE_DATA = {
+    allianceNotes: '',
+    externalPressures: ''
+};
+
+export function getNotetakerRecordForMove(records = [], move = 1) {
+    return (records || []).find((record) => record.move === move) || null;
+}
+
+export function buildNotetakerViewState(record = null) {
+    return {
+        dynamicsData: {
+            ...DEFAULT_DYNAMICS_DATA,
+            ...(record?.dynamics_analysis || {})
+        },
+        allianceData: {
+            ...DEFAULT_ALLIANCE_DATA,
+            ...(record?.external_factors || {})
+        },
+        observationTimeline: Array.isArray(record?.observation_timeline)
+            ? record.observation_timeline
+            : []
+    };
+}
+
+export function createObservationTimelineEntry({
+    id = null,
+    type,
+    content,
+    phase = 1,
+    createdAt = new Date().toISOString(),
+    factionTag = null
+} = {}) {
+    return {
+        id,
+        type,
+        timestamp: createdAt,
+        phase,
+        content,
+        ...(factionTag ? { faction_tag: factionTag } : {})
+    };
+}
+
+const AUTO_SAVE_TEXT = {
+    idle: 'No unsaved changes',
+    saving: 'Saving...',
+    saved: 'Saved',
+    error: 'Save failed'
+};
+
+const AUTO_SAVE_ELEMENT_IDS = {
+    dynamics: 'dynamicsAutoSave',
+    alliance: 'allianceAutoSave'
+};
+
+/**
+ * Notetaker Controller Class
+ */
+export class NotetakerController {
+    constructor() {
+        this.captures = [];
+        this.actions = [];
+        this.dynamicsData = { ...DEFAULT_DYNAMICS_DATA };
+        this.allianceData = { ...DEFAULT_ALLIANCE_DATA };
+        this.observationTimeline = [];
+        this.dynamicsAutoSaveDebounce = null;
+        this.allianceAutoSaveDebounce = null;
+        this.unsubscribeSession = null;
+        this.currentMove = 1;
+        this.currentPhase = 1;
+        this.initialLoadComplete = false;
+        this.teamContext = resolveTeamContext();
+        this.teamId = this.teamContext.teamId;
+        this.teamLabel = this.teamContext.teamLabel;
+    }
+
+    /**
+     * Initialize the Notetaker interface
+     */
+    async init() {
+        logger.info('Initializing Notetaker interface');
+
+        // Check for valid session
+        const sessionId = sessionStore.getSessionId();
+        if (!sessionId) {
+            showToast('No session found. Please join a session first.', { type: 'error' });
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 2000);
+            return;
+        }
+
+        const role = sessionStore.getRole() || sessionStore.getSessionData()?.role;
+        if (role !== this.teamContext.notetakerRole) {
+            showToast(`This page is only available to the ${this.teamContext.notetakerLabel} role.`, { type: 'error' });
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 2000);
+            return;
+        }
+
+        this.configureTeamLabels();
+        this.bindEventListeners();
+        this.setupAutoSave();
+        this.subscribeToSessionChanges();
+        await this.loadInitialData();
+        this.initialLoadComplete = true;
+
+        logger.info('Notetaker interface initialized');
+    }
+
+    configureTeamLabels() {
+        const headerTitle = document.querySelector('.header-title');
+        if (headerTitle) {
+            headerTitle.textContent = this.teamContext.notetakerLabel;
+        }
+    }
+
+    /**
+     * Bind event listeners
+     */
+    bindEventListeners() {
+        // Capture form
+        const captureForm = document.getElementById('captureForm');
+        if (captureForm) {
+            captureForm.addEventListener('submit', (e) => this.handleCaptureSubmit(e));
+        }
+
+        // Dynamics form inputs
+        const dynamicsForm = document.getElementById('dynamicsForm');
+        if (dynamicsForm) {
+            dynamicsForm.addEventListener('input', () => this.handleDynamicsChange());
+        }
+
+        // Range sliders display
+        const frictionLevel = document.getElementById('frictionLevel');
+        const frictionValue = document.getElementById('frictionValue');
+        if (frictionLevel && frictionValue) {
+            frictionLevel.addEventListener('input', () => {
+                frictionValue.textContent = frictionLevel.value;
+            });
+        }
+
+        const consensusLevel = document.getElementById('consensusLevel');
+        const consensusValue = document.getElementById('consensusValue');
+        if (consensusLevel && consensusValue) {
+            consensusLevel.addEventListener('input', () => {
+                consensusValue.textContent = consensusLevel.value;
+            });
+        }
+
+        // Alliance form inputs
+        const allianceForm = document.getElementById('allianceForm');
+        if (allianceForm) {
+            allianceForm.addEventListener('input', () => this.handleAllianceChange());
+        }
+    }
+
+    /**
+     * Setup auto-save functionality
+     */
+    setupAutoSave() {
+        this.dynamicsAutoSaveDebounce = debounce(() => {
+            void this.saveDynamicsData();
+        }, 2000);
+
+        this.allianceAutoSaveDebounce = debounce(() => {
+            void this.saveAllianceData();
+        }, 2000);
+    }
+
+    /**
+     * Subscribe to move and phase changes from shared session state
+     */
+    subscribeToSessionChanges() {
+        this.unsubscribeSession = sessionStore.subscribe((snapshot) => {
+            const nextMove = snapshot.sessionData?.gameState?.move ?? 1;
+            const nextPhase = snapshot.sessionData?.gameState?.phase ?? 1;
+            const hasMoveChanged = nextMove !== this.currentMove;
+
+            this.currentMove = nextMove;
+            this.currentPhase = nextPhase;
+
+            if (this.initialLoadComplete && hasMoveChanged) {
+                this.handleMoveChange();
+            }
+        });
+    }
+
+    /**
+     * Load initial data
+     */
+    async loadInitialData() {
+        const sessionId = sessionStore.getSessionId();
+        if (!sessionId) return;
+
+        try {
+            await Promise.all([
+                this.loadCaptures(),
+                this.loadActions(),
+                this.loadCurrentMoveData(),
+                this.loadTimeline()
+            ]);
+        } catch (err) {
+            logger.error('Failed to load initial data:', err);
+        }
+    }
+
+    /**
+     * Handle move changes by clearing pending saves and reloading move-scoped data
+     */
+    async handleMoveChange() {
+        this.dynamicsAutoSaveDebounce?.cancel?.();
+        this.allianceAutoSaveDebounce?.cancel?.();
+        this.setAutoSaveStatus('dynamics', 'idle');
+        this.setAutoSaveStatus('alliance', 'idle');
+
+        await this.loadCurrentMoveData();
+    }
+
+    /**
+     * Load captures from timeline
+     */
+    async loadCaptures() {
+        const sessionId = sessionStore.getSessionId();
+        const container = document.getElementById('recentCaptures');
+        if (!container || !sessionId) return;
+
+        const loader = showInlineLoader(container, { message: 'Loading captures...' });
+
+        try {
+            const data = await database.fetchTimeline(sessionId);
+
+            this.captures = (data || []).filter(t => {
+                const captureType = t.type || t.event_type;
+                return ['NOTE', 'MOMENT', 'QUOTE'].includes(captureType) && t.team === this.teamId;
+            }).slice(0, 20);
+
+            this.renderCaptures();
+            logger.info(`Loaded ${this.captures.length} captures`);
+        } catch (err) {
+            logger.error('Failed to load captures:', err);
+        } finally {
+            if (loader) loader.hide();
+        }
+    }
+
+    /**
+     * Render captures list
+     */
+    renderCaptures() {
+        const container = document.getElementById('recentCaptures');
+        if (!container) return;
+
+        if (this.captures.length === 0) {
+            container.innerHTML = '<p class="text-sm text-gray-500">No captures yet. Start recording observations above.</p>';
+            return;
+        }
+
+        container.innerHTML = this.captures.map(capture => {
+            const typeColors = {
+                'NOTE': 'default',
+                'MOMENT': 'warning',
+                'QUOTE': 'info'
+            };
+            const captureType = capture.type || capture.event_type || 'NOTE';
+            const captureContent = capture.content || capture.description || '';
+
+            return `
+                <div class="card card-bordered" style="padding: var(--space-3); margin-bottom: var(--space-2);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-2);">
+                        ${createBadge({ text: captureType, type: typeColors[captureType] || 'default', size: 'sm' }).outerHTML}
+                        <span class="text-xs text-gray-400">Move ${capture.move || 1} • ${formatRelativeTime(capture.created_at)}</span>
+                    </div>
+                    <p class="text-sm">${this.escapeHtml(captureContent)}</p>
+                </div>
+            `;
+        }).join('');
+    }
+
+    /**
+     * Handle capture form submit
+     * @param {Event} e - Submit event
+     */
+    async handleCaptureSubmit(e) {
+        e.preventDefault();
+
+        const typeInput = document.querySelector('input[name="captureType"]:checked');
+        const contentInput = document.getElementById('captureContent');
+
+        const type = typeInput?.value;
+        const content = contentInput?.value?.trim();
+
+        if (!content) {
+            showToast('Please enter content', { type: 'error' });
+            return;
+        }
+
+        const sessionId = sessionStore.getSessionId();
+        if (!sessionId) return;
+
+        try {
+            const gameState = this.getCurrentGameState();
+            const captureData = {
+                session_id: sessionId,
+                type,
+                content,
+                team: this.teamId,
+                metadata: { actor: 'notetaker' },
+                move: gameState?.move ?? 1,
+                phase: gameState?.phase ?? 1
+            };
+
+            const createdEvent = await database.createTimelineEvent(captureData);
+            const observationEntry = createObservationTimelineEntry({
+                id: createdEvent?.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null),
+                type,
+                content,
+                phase: captureData.phase,
+                createdAt: createdEvent?.created_at || new Date().toISOString()
+            });
+
+            try {
+                await database.saveNotetakerData({
+                    ...this.buildNotetakerPayloadBase(),
+                    observation_timeline_append: [observationEntry]
+                });
+                this.observationTimeline = [...this.observationTimeline, observationEntry];
+                showToast('Observation saved', { type: 'success' });
+            } catch (appendError) {
+                logger.error('Failed to append capture to move-scoped notetaker data:', appendError);
+                showToast('Observation saved, but move notes did not fully sync.', { type: 'warning' });
+            }
+
+            contentInput.value = '';
+            await Promise.all([
+                this.loadCaptures(),
+                this.loadTimeline()
+            ]);
+        } catch (err) {
+            logger.error('Failed to save capture:', err);
+            showToast('Failed to save observation', { type: 'error' });
+        }
+    }
+
+    /**
+     * Load actions (read-only view)
+     */
+    async loadActions() {
+        const sessionId = sessionStore.getSessionId();
+        const container = document.getElementById('actionsListView');
+        if (!container || !sessionId) return;
+
+        const loader = showInlineLoader(container, { message: 'Loading actions...' });
+
+        try {
+            const data = await database.fetchActions(sessionId, { team: this.teamId });
+
+            this.actions = data || [];
+            this.renderActionsView();
+        } catch (err) {
+            logger.error('Failed to load actions:', err);
+        } finally {
+            if (loader) loader.hide();
+        }
+    }
+
+    /**
+     * Render actions (read-only)
+     */
+    renderActionsView() {
+        const container = document.getElementById('actionsListView');
+        if (!container) return;
+
+        if (this.actions.length === 0) {
+            container.innerHTML = '<p class="text-sm text-gray-500">No actions submitted yet.</p>';
+            return;
+        }
+
+        container.innerHTML = this.actions.map(action => `
+            <div class="card card-bordered" style="padding: var(--space-4); margin-bottom: var(--space-3);">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-2);">
+                    <div>
+                        <h4 class="font-semibold">${this.escapeHtml(action.goal || action.title || 'Untitled action')}</h4>
+                        <p class="text-xs text-gray-500">${action.mechanism || 'No mechanism'} • Move ${action.move || 1}</p>
+                    </div>
+                    <div style="display: flex; gap: var(--space-2);">
+                        ${createStatusBadge(action.status || 'draft').outerHTML}
+                        ${createPriorityBadge(action.priority || 'NORMAL').outerHTML}
+                    </div>
+                </div>
+                <p class="text-sm">${this.escapeHtml(action.expected_outcomes || action.description || 'No expected outcomes')}</p>
+                ${action.ally_contingencies ? `
+                    <p class="text-xs text-gray-500" style="margin-top: var(--space-2);">
+                        <strong>Ally Contingencies:</strong> ${this.escapeHtml(action.ally_contingencies)}
+                    </p>
+                ` : ''}
+                <p class="text-xs text-gray-500" style="margin-top: var(--space-2);">
+                    <strong>Targets:</strong> ${this.escapeHtml((Array.isArray(action.targets) ? action.targets : (action.target ? [action.target] : [])).join(', ') || 'Not specified')} |
+                    <strong>Exposure:</strong> ${this.escapeHtml(action.exposure_type || 'Not specified')}
+                </p>
+            </div>
+        `).join('');
+    }
+
+    /**
+     * Load notetaker data for the active move
+     */
+    async loadCurrentMoveData() {
+        const sessionId = sessionStore.getSessionId();
+        if (!sessionId) return;
+
+        try {
+            const record = await database.getNotetakerData(sessionId, this.currentMove);
+            const viewState = buildNotetakerViewState(record);
+
+            this.dynamicsData = viewState.dynamicsData;
+            this.allianceData = viewState.allianceData;
+            this.observationTimeline = viewState.observationTimeline;
+
+            this.populateDynamicsForm();
+            this.populateAllianceForm();
+            this.setAutoSaveStatus('dynamics', 'idle');
+            this.setAutoSaveStatus('alliance', 'idle');
+
+            logger.info(`Loaded move-scoped notetaker data for move ${this.currentMove}`);
+        } catch (err) {
+            logger.error('Failed to load move-scoped notetaker data:', err);
+        }
+    }
+
+    /**
+     * Populate dynamics form with saved data
+     */
+    populateDynamicsForm() {
+        const fields = ['emergingLeaders', 'decisionStyle', 'frictionLevel', 'frictionSources', 'consensusLevel', 'dynamicsSummary'];
+
+        fields.forEach(field => {
+            const element = document.getElementById(field);
+            if (element) {
+                element.value = this.dynamicsData[field] ?? DEFAULT_DYNAMICS_DATA[field];
+
+                // Update range display
+                if (field === 'frictionLevel') {
+                    const display = document.getElementById('frictionValue');
+                    if (display) display.textContent = element.value;
+                }
+                if (field === 'consensusLevel') {
+                    const display = document.getElementById('consensusValue');
+                    if (display) display.textContent = element.value;
+                }
+            }
+        });
+    }
+
+    /**
+     * Handle dynamics form changes
+     */
+    handleDynamicsChange() {
+        this.dynamicsData = this.collectDynamicsFormData();
+        this.setAutoSaveStatus('dynamics', 'saving');
+        this.dynamicsAutoSaveDebounce?.();
+    }
+
+    /**
+     * Save dynamics data to database
+     */
+    async saveDynamicsData() {
+        const sessionId = sessionStore.getSessionId();
+        if (!sessionId) return;
+
+        try {
+            await database.saveNotetakerData({
+                ...this.buildNotetakerPayloadBase(),
+                dynamics_analysis: this.dynamicsData
+            });
+            this.setAutoSaveStatus('dynamics', 'saved');
+            logger.debug('Dynamics data saved');
+        } catch (err) {
+            logger.error('Failed to save dynamics data:', err);
+            this.setAutoSaveStatus('dynamics', 'error');
+        }
+    }
+
+    /**
+     * Populate alliance form with saved data
+     */
+    populateAllianceForm() {
+        const allianceNotes = document.getElementById('allianceNotes');
+        const externalPressures = document.getElementById('externalPressures');
+
+        if (allianceNotes) {
+            allianceNotes.value = this.allianceData.allianceNotes ?? DEFAULT_ALLIANCE_DATA.allianceNotes;
+        }
+        if (externalPressures) {
+            externalPressures.value = this.allianceData.externalPressures ?? DEFAULT_ALLIANCE_DATA.externalPressures;
+        }
+    }
+
+    /**
+     * Handle alliance form changes
+     */
+    handleAllianceChange() {
+        this.allianceData = this.collectAllianceFormData();
+        this.setAutoSaveStatus('alliance', 'saving');
+        this.allianceAutoSaveDebounce?.();
+    }
+
+    /**
+     * Save alliance data to database
+     */
+    async saveAllianceData() {
+        const sessionId = sessionStore.getSessionId();
+        if (!sessionId) return;
+
+        try {
+            await database.saveNotetakerData({
+                ...this.buildNotetakerPayloadBase(),
+                external_factors: this.allianceData
+            });
+            this.setAutoSaveStatus('alliance', 'saved');
+            logger.debug('Alliance data saved');
+        } catch (err) {
+            logger.error('Failed to save alliance data:', err);
+            this.setAutoSaveStatus('alliance', 'error');
+        }
+    }
+
+    /**
+     * Collect current dynamics form values
+     * @returns {Object} Normalized dynamics payload
+     */
+    collectDynamicsFormData() {
+        return {
+            emergingLeaders: document.getElementById('emergingLeaders')?.value || '',
+            decisionStyle: document.getElementById('decisionStyle')?.value || '',
+            frictionLevel: document.getElementById('frictionLevel')?.value || DEFAULT_DYNAMICS_DATA.frictionLevel,
+            frictionSources: document.getElementById('frictionSources')?.value || '',
+            consensusLevel: document.getElementById('consensusLevel')?.value || DEFAULT_DYNAMICS_DATA.consensusLevel,
+            dynamicsSummary: document.getElementById('dynamicsSummary')?.value || ''
+        };
+    }
+
+    /**
+     * Collect current alliance form values
+     * @returns {Object} Normalized alliance payload
+     */
+    collectAllianceFormData() {
+        return {
+            allianceNotes: document.getElementById('allianceNotes')?.value || '',
+            externalPressures: document.getElementById('externalPressures')?.value || ''
+        };
+    }
+
+    /**
+     * Resolve current shared game state
+     * @returns {Object} Current game state
+     */
+    getCurrentGameState() {
+        return sessionStore.getSessionData()?.gameState || {
+            move: this.currentMove,
+            phase: this.currentPhase
+        };
+    }
+
+    /**
+     * Build base payload for move-scoped notetaker writes
+     * @returns {Object} Shared notetaker payload fields
+     */
+    buildNotetakerPayloadBase() {
+        const sessionId = sessionStore.getSessionId();
+        const gameState = this.getCurrentGameState();
+
+        return {
+            session_id: sessionId,
+            move: gameState?.move ?? this.currentMove ?? 1,
+            phase: gameState?.phase ?? this.currentPhase ?? 1,
+            team: this.teamId,
+            client_id: sessionStore.getClientId()
+        };
+    }
+
+    /**
+     * Update autosave indicator for a specific section
+     * @param {'dynamics'|'alliance'} section - Form section
+     * @param {'idle'|'saving'|'saved'|'error'} status - Save status
+     */
+    setAutoSaveStatus(section, status) {
+        const indicatorId = AUTO_SAVE_ELEMENT_IDS[section];
+        const indicator = indicatorId ? document.getElementById(indicatorId) : null;
+        if (!indicator) return;
+
+        indicator.textContent = AUTO_SAVE_TEXT[status] || AUTO_SAVE_TEXT.idle;
+        indicator.dataset.status = status;
+    }
+
+    /**
+     * Load timeline events
+     */
+    async loadTimeline() {
+        const sessionId = sessionStore.getSessionId();
+        const container = document.getElementById('timelineList');
+        if (!container || !sessionId) return;
+
+        const loader = showInlineLoader(container, { message: 'Loading timeline...' });
+
+        try {
+            const data = await database.fetchTimeline(sessionId);
+            const relevantEvents = (data || []).filter((event) => [this.teamId, 'white_cell'].includes(event.team));
+
+            this.renderTimeline(relevantEvents);
+        } catch (err) {
+            logger.error('Failed to load timeline:', err);
+        } finally {
+            if (loader) loader.hide();
+        }
+    }
+
+    /**
+     * Render timeline
+     * @param {Array} events - Timeline events
+     */
+    renderTimeline(events) {
+        const container = document.getElementById('timelineList');
+        if (!container) return;
+
+        if (events.length === 0) {
+            container.innerHTML = '<p class="text-sm text-gray-500">No events yet.</p>';
+            return;
+        }
+
+        // Group by move
+        const groupedEvents = events.reduce((acc, event) => {
+            const move = event.move || 1;
+            if (!acc[move]) acc[move] = [];
+            acc[move].push(event);
+            return acc;
+        }, {});
+
+        container.innerHTML = Object.entries(groupedEvents)
+            .sort(([a], [b]) => b - a)
+            .map(([move, moveEvents]) => `
+                <div class="timeline-group" style="margin-bottom: var(--space-6);">
+                    <h4 class="text-sm font-semibold text-gray-500 mb-3">Move ${move}</h4>
+                    <div class="timeline-events">
+                        ${moveEvents.map(event => {
+                            const eventType = event.type || event.event_type || 'EVENT';
+                            const eventContent = event.content || event.description || '';
+                            const eventActor = event.actor || event.metadata?.actor || '';
+
+                            return `
+                            <div class="timeline-event" style="display: flex; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--color-gray-200);">
+                                <div class="timeline-marker" style="width: 8px; height: 8px; border-radius: 50%; background: var(--color-primary-500); margin-top: 6px; flex-shrink: 0;"></div>
+                                <div class="timeline-content" style="flex: 1;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        ${createBadge({ text: eventType, size: 'sm' }).outerHTML}
+                                        <span class="text-xs text-gray-400">${formatDateTime(event.created_at)}</span>
+                                    </div>
+                                    <p class="text-sm mt-1">${this.escapeHtml(eventContent)}</p>
+                                    ${eventActor ? `<p class="text-xs text-gray-400 mt-1">By: ${this.escapeHtml(eventActor)}</p>` : ''}
+                                </div>
+                            </div>
+                        `;
+                        }).join('')}
+                    </div>
+                </div>
+            `).join('');
+    }
+
+    /**
+     * Escape HTML
+     * @param {string} str - String to escape
+     * @returns {string} Escaped string
+     */
+    escapeHtml(str) {
+        if (typeof str !== 'string') return '';
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+    }
+
+    /**
+     * Cleanup
+     */
+    destroy() {
+        this.dynamicsAutoSaveDebounce?.flush?.();
+        this.allianceAutoSaveDebounce?.flush?.();
+        this.unsubscribeSession?.();
+    }
+}
+
+const notetakerController = new NotetakerController();
+
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => notetakerController.init());
+    } else {
+        notetakerController.init();
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', () => notetakerController.destroy());
+}
+
+export default notetakerController;

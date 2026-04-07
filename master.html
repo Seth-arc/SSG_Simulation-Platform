@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="ESG Simulation - Game Master Dashboard">
+    <title>Control Panel - ESG Simulation</title>
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="/styles/base/reset.css">
+    <link rel="stylesheet" href="/styles/base/variables.css">
+    <link rel="stylesheet" href="/styles/base/typography.css">
+    <link rel="stylesheet" href="/styles/components/buttons.css">
+    <link rel="stylesheet" href="/styles/components/forms.css">
+    <link rel="stylesheet" href="/styles/components/cards.css">
+    <link rel="stylesheet" href="/styles/components/modals.css">
+    <link rel="stylesheet" href="/styles/components/badges.css">
+    <link rel="stylesheet" href="/styles/layouts/app-layout.css">
+
+    <style>
+        .skip-link {
+            position: absolute;
+            left: -9999px;
+            top: auto;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            z-index: 1000;
+        }
+
+        .skip-link:focus {
+            left: 1rem;
+            top: 1rem;
+            width: auto;
+            height: auto;
+            padding: 0.75rem 1rem;
+            background: #111827;
+            color: #ffffff;
+            border-radius: 0.375rem;
+        }
+
+        /* Interactive Polish for Dashboard */
+        .sidebar {
+            background: var(--color-surface);
+            border-right: 1px solid var(--color-border);
+            box-shadow: var(--shadow-md);
+            z-index: 10;
+        }
+
+        .sidebar-brand {
+            height: var(--header-height);
+            display: flex;
+            align-items: center;
+            padding: 0 var(--space-6);
+            border-bottom: 1px solid var(--color-border-subtle);
+            font-family: var(--font-serif);
+            font-weight: var(--font-bold);
+            font-size: var(--text-lg);
+            color: var(--color-navy);
+            letter-spacing: -0.02em;
+        }
+
+        .sidebar-menu {
+            padding: var(--space-4);
+        }
+
+        .sidebar-link {
+            display: flex;
+            align-items: center;
+            padding: var(--space-3) var(--space-4);
+            color: var(--color-text-secondary);
+            border-radius: var(--radius-lg);
+            transition: all var(--transition-fast);
+            margin-bottom: var(--space-1);
+            font-weight: var(--font-medium);
+            font-size: var(--text-sm);
+        }
+
+        .sidebar-link:hover {
+            background: var(--color-surface-hover);
+            color: var(--color-navy);
+            transform: translateX(4px);
+        }
+
+        .sidebar-link-active {
+            background: var(--color-navy-soft);
+            color: var(--color-navy);
+            font-weight: var(--font-semibold);
+        }
+
+        .sidebar-icon {
+            margin-right: var(--space-3);
+            width: 20px;
+            height: 20px;
+            opacity: 0.7;
+        }
+
+        .sidebar-link-active .sidebar-icon {
+            opacity: 1;
+        }
+
+        /* Header Polish */
+        .page-header {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(var(--blur-sm));
+            border-bottom: 1px solid var(--color-border-light);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .header-title-section {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .header-title {
+            font-size: var(--text-base);
+            font-weight: var(--font-semibold);
+            color: var(--color-text);
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        .header-subtitle {
+            font-size: var(--text-xs);
+            color: var(--color-text-muted);
+        }
+
+        /* Game State Indicators */
+        .header-game-state {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-full);
+            padding: 4px 16px;
+            display: flex;
+            gap: var(--space-4);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .game-state-item {
+            display: flex;
+            align-items: center;
+            gap: var(--space-2);
+            font-size: var(--text-sm);
+        }
+
+        .game-state-label {
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.05em;
+            color: var(--color-text-muted);
+            font-weight: var(--font-bold);
+        }
+
+        .game-state-value {
+            font-family: var(--font-mono);
+            font-weight: var(--font-bold);
+            color: var(--color-navy);
+        }
+
+        /* Dashboard Cards */
+        .card {
+            border: 1px solid var(--color-border-light);
+            box-shadow: var(--shadow-card);
+            transition: transform var(--transition-smooth), box-shadow var(--transition-smooth);
+            overflow: hidden;
+        }
+
+        .card-hoverable:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--color-navy-soft);
+        }
+
+        .card-header {
+            background: linear-gradient(to right, rgba(249, 250, 251, 0.5), transparent);
+            border-bottom: 1px solid var(--color-border-light);
+            padding: var(--space-4) var(--space-6);
+        }
+
+        .card-header h3 {
+            font-size: var(--text-base);
+            font-weight: var(--font-semibold);
+            margin: 0;
+            color: var(--color-navy-deep);
+        }
+
+        .stat-card {
+            padding: var(--space-6);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-label {
+            font-size: var(--text-sm);
+            color: var(--color-text-muted);
+            margin-bottom: var(--space-2);
+        }
+
+        .stat-value {
+            font-size: var(--text-3xl);
+            font-family: var(--font-serif);
+            color: var(--color-navy);
+            font-weight: var(--font-medium);
+        }
+
+        /* Animation for section transitions */
+        .content-section {
+            animation: fadeIn 0.4s var(--transition-smooth);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    <div id="runtimeConfigNotice" hidden aria-live="assertive"></div>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <span>Control Panel</span>
+            </div>
+
+            <nav class="sidebar-nav">
+                <ul class="sidebar-menu">
+                    <li class="sidebar-heading"
+                        style="padding: 0 var(--space-4); margin-bottom: var(--space-2); font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 600;">
+                        Main</li>
+                    <li class="sidebar-menu-item">
+                        <a href="#dashboard" class="sidebar-link sidebar-link-active" data-section="dashboard">
+                            <span class="sidebar-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="7" height="7"></rect>
+                                    <rect x="14" y="3" width="7" height="7"></rect>
+                                    <rect x="14" y="14" width="7" height="7"></rect>
+                                    <rect x="3" y="14" width="7" height="7"></rect>
+                                </svg>
+                            </span>
+                            <span class="sidebar-label">Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-menu-item">
+                        <a href="#sessions" class="sidebar-link" data-section="sessions">
+                            <span class="sidebar-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                                    <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                                </svg>
+                            </span>
+                            <span class="sidebar-label">Sessions</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-menu-item">
+                        <a href="#participants" class="sidebar-link" data-section="participants">
+                            <span class="sidebar-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                                    <circle cx="9" cy="7" r="4"></circle>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                                    <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                </svg>
+                            </span>
+                            <span class="sidebar-label">Participants</span>
+                        </a>
+                    </li>
+
+                    <li class="sidebar-heading"
+                        style="padding: 0 var(--space-4); margin: var(--space-4) 0 var(--space-2); font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 600;">
+                        Data</li>
+
+                    <li class="sidebar-menu-item">
+                        <a href="#export" class="sidebar-link" data-section="export">
+                            <span class="sidebar-icon">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                            </span>
+                            <span class="sidebar-label">Export Data</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+
+            <div
+                style="position: absolute; bottom: 0; left: 0; right: 0; padding: var(--space-4); background: var(--color-surface); border-top: 1px solid var(--color-border-light);">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <div
+                        style="width: 32px; height: 32px; background: var(--color-navy); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--color-gold); font-family: var(--font-serif); font-weight: bold; font-size: 14px;">
+                        W&M</div>
+                    <div style="display: flex; flex-direction: column;">
+                        <span
+                            style="font-size: 10px; font-weight: bold; color: var(--color-navy); text-transform: uppercase;">Statecraft
+                            Sim</span>
+                        <span style="font-size: 9px; color: var(--color-text-muted);">William & Mary</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Header -->
+        <header class="page-header" id="pageHeader">
+            <div class="header-left">
+                <button class="header-menu-btn btn btn-ghost btn-icon-only" id="menuToggle" aria-label="Toggle menu">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+                <div class="header-title-section">
+                    <h1 class="header-title">Game Master Dashboard</h1>
+                    <p class="header-subtitle" id="sessionName">No Active Session</p>
+                </div>
+            </div>
+
+            <div class="header-center">
+                <div class="header-game-state" id="headerGameState">
+                    <div class="game-state-item">
+                        <span class="game-state-label">Move</span>
+                        <span class="game-state-value" id="headerMove">-</span>
+                    </div>
+                    <div class="game-state-item"
+                        style="border-left: 1px solid var(--color-border); padding-left: var(--space-4);">
+                        <span class="game-state-label">Phase</span>
+                        <span class="game-state-value" id="headerPhase">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <div class="header-session-info" id="headerSessionInfo">
+                    <span class="badge badge-primary">Administrator</span>
+                    <span class="session-indicator" id="connectionIndicator"></span>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-ghost btn-sm" id="logoutBtn">
+                        Disconnect
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content" id="main-content">
+            <div class="page-container">
+                <!-- Dashboard Section -->
+                <section id="dashboardSection" class="content-section">
+                    <div class="section-header">
+                        <div class="section-title-wrapper">
+                            <h2 class="section-title">System Overview</h2>
+                            <p class="section-description">Real-time monitoring of simulation parameters</p>
+                        </div>
+                        <div class="section-actions">
+                            <button class="btn btn-outline" id="refreshDashboardBtn">Refresh Data</button>
+                        </div>
+                    </div>
+
+                    <div class="section-body">
+                        <!-- Stats Grid -->
+                        <div class="section-grid section-grid-4 mb-6" id="statsGrid">
+                            <div class="card stat-card">
+                                <span class="stat-label">Active Sessions</span>
+                                <span class="stat-value">0</span>
+                            </div>
+                            <div class="card stat-card">
+                                <span class="stat-label">Active Participants</span>
+                                <span class="stat-value">0</span>
+                            </div>
+                            <div class="card stat-card">
+                                <span class="stat-label">Actions Logged</span>
+                                <span class="stat-value">0</span>
+                            </div>
+                            <div class="card stat-card">
+                                <span class="stat-label">Pending RFIs</span>
+                                <span class="stat-value">0</span>
+                            </div>
+                        </div>
+
+                        <div class="section-grid section-grid-2">
+                            <div class="card card-bordered">
+                                <div class="card-header">
+                                    <h3>Recent Activity Log</h3>
+                                </div>
+                                <div class="card-body" id="recentActivity">
+                                    <div
+                                        style="padding: var(--space-4); text-align: center; color: var(--color-text-muted);">
+                                        No recent activities recorded.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card card-bordered">
+                                <div class="card-header">
+                                    <h3>Connected Participants</h3>
+                                </div>
+                                <div class="card-body" id="activeParticipants">
+                                    <div
+                                        style="padding: var(--space-4); text-align: center; color: var(--color-text-muted);">
+                                        Waiting for connections...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Sessions Section -->
+                <section id="sessionsSection" class="content-section" style="display: none;">
+                    <div class="section-header">
+                        <div class="section-title-wrapper">
+                            <h2 class="section-title">Session Management</h2>
+                            <p class="section-description">Initialize and configure simulation instances</p>
+                        </div>
+                        <div class="section-actions">
+                            <button class="btn btn-primary" id="createSessionBtn">
+                                + New Session
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="section-body">
+                        <div class="card-list" id="sessionsList">
+                            <!-- Sessions will be populated here -->
+                            <div class="card" style="padding: var(--space-8); text-align: center;">
+                                <p class="text-muted">Loading available sessions...</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Session Detail Section (shown when viewing a specific session) -->
+                <section id="sessionDetailSection" class="content-section" style="display: none;">
+                    <div id="sessionDetailContent">
+                        <!-- Session details will be populated here -->
+                    </div>
+                </section>
+
+                <!-- Participants Section -->
+                <section id="participantsSection" class="content-section" style="display: none;">
+                    <div class="section-header">
+                        <div class="section-title-wrapper">
+                            <h2 class="section-title">Participant Roster</h2>
+                            <p class="section-description">Manage roles and access for connected users</p>
+                        </div>
+                        <div class="section-actions">
+                            <label class="sr-only" for="participantsSessionSelect">Select session for participant roster</label>
+                            <select id="participantsSessionSelect" class="form-input" aria-describedby="participantsSelectionState">
+                                <option value="">Select session</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="section-body">
+                        <p class="text-sm text-gray-500 mb-4" id="participantsSelectionState">Select a session from Session Management to view participants.</p>
+                        <div id="participantsList" class="card"
+                            style="min-height: 200px; display: flex; align-items: center; justify-content: center;">
+                            <p class="text-gray-500">Select a session from the Session Management tab to view
+                                participants</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Export Section -->
+                <section id="exportSection" class="content-section" style="display: none;">
+                    <div class="section-header">
+                        <div class="section-title-wrapper">
+                            <h2 class="section-title">Data Export</h2>
+                            <p class="section-description">Generate reports and extract raw simulation data</p>
+                        </div>
+                        <div class="section-actions">
+                            <label class="sr-only" for="exportSessionSelect">Select session for export</label>
+                            <select id="exportSessionSelect" class="form-input" aria-describedby="exportSelectionState">
+                                <option value="">Select session</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="section-body">
+                        <p class="text-sm text-gray-500 mb-4" id="exportSelectionState">Select a session before exporting data.</p>
+
+                        <div class="section-grid section-grid-3">
+                            <div class="card card-bordered card-hoverable" id="exportJson">
+                                <div class="card-body" style="text-align: center; padding: var(--space-8);">
+                                    <div style="margin-bottom: var(--space-4); color: var(--color-navy);">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="1.5">
+                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                            <polyline points="14 2 14 8 20 8"></polyline>
+                                            <path d="M10 12h4"></path>
+                                            <path d="M10 16h4"></path>
+                                        </svg>
+                                    </div>
+                                    <h3>JSON Data</h3>
+                                    <p class="text-sm text-gray-500 mb-4">Full selected-session dataset in JSON format</p>
+                                    <button class="btn btn-outline btn-sm" id="exportJsonBtn" disabled>Download JSON</button>
+                                </div>
+                            </div>
+
+                            <div class="card card-bordered card-hoverable" id="exportCsv">
+                                <div class="card-body" style="text-align: center; padding: var(--space-8);">
+                                    <div style="margin-bottom: var(--space-4); color: var(--color-success);">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="1.5">
+                                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                            <polyline points="14 2 14 8 20 8"></polyline>
+                                            <path d="M8 13h8"></path>
+                                            <path d="M8 17h8"></path>
+                                            <path d="M10 9h4"></path>
+                                        </svg>
+                                    </div>
+                                    <h3>CSV Export</h3>
+                                    <p class="text-sm text-gray-500 mb-4">Download individual session data tables</p>
+                                    <div style="display: grid; gap: var(--space-2);">
+                                        <button class="btn btn-outline btn-sm" id="exportActionsCsvBtn" disabled>Actions CSV</button>
+                                        <button class="btn btn-outline btn-sm" id="exportRequestsCsvBtn" disabled>RFIs CSV</button>
+                                        <button class="btn btn-outline btn-sm" id="exportTimelineCsvBtn" disabled>Timeline CSV</button>
+                                        <button class="btn btn-outline btn-sm" id="exportParticipantsCsvBtn" disabled>Participants CSV</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="card card-bordered card-hoverable" id="exportPdf">
+                                <div class="card-body" style="text-align: center; padding: var(--space-8);">
+                                    <div style="margin-bottom: var(--space-4); color: var(--color-warning);">
+                                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="1.5">
+                                            <path d="M7 18h10"></path>
+                                            <path d="M7 14h10"></path>
+                                            <path d="M9 10h6"></path>
+                                            <path d="M6 2h9l5 5v15a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path>
+                                        </svg>
+                                    </div>
+                                    <h3>Print / PDF</h3>
+                                    <p class="text-sm text-gray-500 mb-4">Open a printable session report and save as PDF</p>
+                                    <button class="btn btn-outline btn-sm" id="exportPdfBtn" disabled>Open Print View</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Mobile sidebar overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <script type="module" src="/src/main.js"></script>
+    <script type="module" src="/src/roles/gamemaster.js"></script>
+</body>
+
+</html>
