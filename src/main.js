@@ -12,6 +12,7 @@ import { createLogger } from './utils/logger.js';
 import { showToast } from './components/ui/Toast.js';
 import { hideLoader } from './components/ui/Loader.js';
 import { ConfigurationError } from './core/errors.js';
+import { buildAppPath, isLandingPage, navigateToApp } from './core/navigation.js';
 
 const logger = createLogger('Main');
 const runtimeConfigStatus = getRuntimeConfigStatus();
@@ -140,7 +141,7 @@ function setupLogoutHandler() {
         sessionStore.clear();
 
         // Redirect to home
-        window.location.href = '/';
+        navigateToApp('');
     });
 }
 
@@ -158,7 +159,7 @@ async function startHeartbeat() {
     }
 
     // Don't start heartbeat on landing page
-    if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
+    if (isLandingPage()) {
         return;
     }
 
@@ -185,7 +186,7 @@ async function startHeartbeat() {
     // Also send heartbeat before page unload
     window.addEventListener('beforeunload', () => {
         // Try to send a final heartbeat (may not complete)
-        navigator.sendBeacon && navigator.sendBeacon('/api/heartbeat');
+        navigator.sendBeacon && navigator.sendBeacon(buildAppPath('api/heartbeat'));
     });
 }
 

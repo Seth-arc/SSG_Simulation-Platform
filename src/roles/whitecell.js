@@ -13,6 +13,7 @@ import { createBadge, createStatusBadge, createPriorityBadge } from '../componen
 import { formatDateTime, formatRelativeTime } from '../utils/formatting.js';
 import { CONFIG } from '../core/config.js';
 import { ENUMS, canAdjudicateAction } from '../core/enums.js';
+import { navigateToApp } from '../core/navigation.js';
 import { resolveTeamContext } from '../core/teamContext.js';
 
 const logger = createLogger('WhiteCell');
@@ -82,7 +83,7 @@ export class WhiteCellController {
                 type: 'error'
             });
             setTimeout(() => {
-                window.location.href = '/';
+                navigateToApp('');
             }, 2000);
             return;
         }
@@ -94,7 +95,7 @@ export class WhiteCellController {
                 type: 'error'
             });
             setTimeout(() => {
-                window.location.href = '/';
+                navigateToApp('');
             }, 2000);
             return;
         }

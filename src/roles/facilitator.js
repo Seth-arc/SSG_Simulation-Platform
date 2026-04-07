@@ -26,6 +26,7 @@ import {
     isSubmittedAction
 } from '../core/enums.js';
 import { getTeamResponseTargets, resolveTeamContext } from '../core/teamContext.js';
+import { navigateToApp } from '../core/navigation.js';
 
 const logger = createLogger('Facilitator');
 
@@ -54,7 +55,7 @@ class FacilitatorController {
                 type: 'error'
             });
             setTimeout(() => {
-                window.location.href = '/';
+                navigateToApp('');
             }, 2000);
             return;
         }
@@ -66,7 +67,7 @@ class FacilitatorController {
                 type: 'error'
             });
             setTimeout(() => {
-                window.location.href = '/';
+                navigateToApp('');
             }, 2000);
             return;
         }

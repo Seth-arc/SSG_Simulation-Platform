@@ -1,3 +1,5 @@
+import { buildAppPath, getCurrentAppRelativePath } from './navigation.js';
+
 /**
  * Team and role surface helpers
  * Centralizes the shipped multi-team routing contract.
@@ -71,19 +73,19 @@ export function getTeamRoleLabels(teamId) {
     };
 }
 
-export function buildTeamRoute(teamId, surface, { observer = false } = {}) {
+export function buildTeamRoute(teamId, surface, { observer = false, basePath } = {}) {
     const team = getTeamConfig(teamId);
     const pageSurface = surface === ROLE_SURFACES.VIEWER
         ? ROLE_SURFACES.FACILITATOR
         : surface;
 
-    const route = `/teams/${team.id}/${pageSurface}.html`;
+    const route = buildAppPath(`teams/${team.id}/${pageSurface}.html`, { basePath });
     return observer ? `${route}?mode=observer` : route;
 }
 
-export function getRoleRoute(role, { observerTeamId = 'blue' } = {}) {
+export function getRoleRoute(role, { observerTeamId = 'blue', basePath } = {}) {
     if (role === 'viewer') {
-        return buildTeamRoute(observerTeamId, ROLE_SURFACES.FACILITATOR, { observer: true });
+        return buildTeamRoute(observerTeamId, ROLE_SURFACES.FACILITATOR, { observer: true, basePath });
     }
 
     const parsedRole = parseTeamRole(role);
@@ -91,7 +93,7 @@ export function getRoleRoute(role, { observerTeamId = 'blue' } = {}) {
         return null;
     }
 
-    return buildTeamRoute(parsedRole.teamId, parsedRole.surface);
+    return buildTeamRoute(parsedRole.teamId, parsedRole.surface, { basePath });
 }
 
 export function getRoleDisplayName(role, { observerTeamId = null } = {}) {
@@ -122,10 +124,12 @@ export function getTeamResponseTargets(teamId) {
 export function resolveTeamContext({
     documentRef = typeof document !== 'undefined' ? document : null,
     locationRef = typeof window !== 'undefined' ? window.location : null,
-    fallbackTeamId = 'blue'
+    fallbackTeamId = 'blue',
+    basePath
 } = {}) {
     const datasetTeam = documentRef?.body?.dataset?.team;
-    const routeTeam = locationRef?.pathname?.match(/\/teams\/(blue|red|green)\//)?.[1];
+    const relativePath = getCurrentAppRelativePath({ locationRef, basePath });
+    const routeTeam = relativePath.match(/^teams\/(blue|red|green)\//)?.[1];
     const team = getTeamConfig(datasetTeam || routeTeam || fallbackTeamId);
     const labels = getTeamRoleLabels(team.id);
 
@@ -141,9 +145,9 @@ export function resolveTeamContext({
         notetakerLabel: labels.notetaker,
         whitecellLabel: labels.whitecell,
         observerLabel: labels.observer,
-        facilitatorRoute: buildTeamRoute(team.id, ROLE_SURFACES.FACILITATOR),
-        notetakerRoute: buildTeamRoute(team.id, ROLE_SURFACES.NOTETAKER),
-        whitecellRoute: buildTeamRoute(team.id, ROLE_SURFACES.WHITECELL),
-        observerRoute: buildTeamRoute(team.id, ROLE_SURFACES.FACILITATOR, { observer: true })
+        facilitatorRoute: buildTeamRoute(team.id, ROLE_SURFACES.FACILITATOR, { basePath }),
+        notetakerRoute: buildTeamRoute(team.id, ROLE_SURFACES.NOTETAKER, { basePath }),
+        whitecellRoute: buildTeamRoute(team.id, ROLE_SURFACES.WHITECELL, { basePath }),
+        observerRoute: buildTeamRoute(team.id, ROLE_SURFACES.FACILITATOR, { observer: true, basePath })
     };
 }

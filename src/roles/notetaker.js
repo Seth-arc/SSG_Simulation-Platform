@@ -18,6 +18,7 @@ import { showInlineLoader } from '../components/ui/Loader.js';
 import { createBadge, createStatusBadge, createPriorityBadge } from '../components/ui/Badge.js';
 import { formatDateTime, formatRelativeTime } from '../utils/formatting.js';
 import { debounce } from '../utils/debounce.js';
+import { navigateToApp } from '../core/navigation.js';
 import { resolveTeamContext } from '../core/teamContext.js';
 
 const logger = createLogger('Notetaker');
@@ -118,7 +119,7 @@ export class NotetakerController {
         if (!sessionId) {
             showToast('No session found. Please join a session first.', { type: 'error' });
             setTimeout(() => {
-                window.location.href = '/';
+                navigateToApp('');
             }, 2000);
             return;
         }
@@ -127,7 +128,7 @@ export class NotetakerController {
         if (role !== this.teamContext.notetakerRole) {
             showToast(`This page is only available to the ${this.teamContext.notetakerLabel} role.`, { type: 'error' });
             setTimeout(() => {
-                window.location.href = '/';
+                navigateToApp('');
             }, 2000);
             return;
         }

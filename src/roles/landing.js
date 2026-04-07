@@ -13,6 +13,7 @@ import { showToast } from '../components/ui/Toast.js';
 import { showLoader, hideLoader } from '../components/ui/Loader.js';
 import { validateSessionCode } from '../utils/validation.js';
 import { CONFIG } from '../core/config.js';
+import { navigateToApp } from '../core/navigation.js';
 import {
     TEAM_OPTIONS,
     ROLE_SURFACES,
@@ -82,7 +83,7 @@ class LandingController {
         if (gmLink) {
             gmLink.addEventListener('click', (e) => {
                 e.preventDefault();
-                window.location.href = '/master.html';
+                navigateToApp('master.html');
             });
         }
 
@@ -349,7 +350,7 @@ class LandingController {
         const observerTeamId = sessionStore.getSessionData()?.team || this.selectedTeam;
         const route = getRoleRoute(role, { observerTeamId });
         if (route) {
-            window.location.href = route;
+            window.location.assign(route);
         } else {
             showToast({ message: 'Unknown role', type: 'error' });
         }
