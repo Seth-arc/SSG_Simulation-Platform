@@ -62,6 +62,9 @@ class ParticipantsStore {
 
         /** @type {Error|null} */
         this.lastLoadError = null;
+
+        /** @type {Promise<Participant[]>|null} */
+        this.pendingRosterRefresh = null;
     }
 
     /**
@@ -132,6 +135,26 @@ class ParticipantsStore {
             logger.error('Failed to load participants:', err);
             throw err;
         }
+    }
+
+    /**
+     * Refresh the roster snapshot when realtime payloads omit participant joins.
+     * @returns {Promise<Participant[]>}
+     */
+    refreshRosterSnapshot() {
+        if (!this.sessionId) {
+            return Promise.resolve(this.participants);
+        }
+
+        if (!this.pendingRosterRefresh) {
+            this.pendingRosterRefresh = this.loadParticipants({
+                tolerateError: true
+            }).finally(() => {
+                this.pendingRosterRefresh = null;
+            });
+        }
+
+        return this.pendingRosterRefresh;
     }
 
     /**
@@ -468,31 +491,61 @@ class ParticipantsStore {
      * @param {Participant} participant - Participant data
      */
     updateFromServer(eventType, participant) {
+        const existingParticipant = participant?.id
+            ? this.participants.find((candidate) => candidate.id === participant.id)
+            : null;
+        const normalizedParticipant = participant
+            ? {
+                ...existingParticipant,
+                ...participant,
+                display_name: participant.display_name
+                    ?? participant.participant_name
+                    ?? participant.participants?.name
+                    ?? existingParticipant?.display_name
+                    ?? null,
+                client_id: participant.client_id
+                    ?? participant.participants?.client_id
+                    ?? existingParticipant?.client_id
+                    ?? null
+            }
+            : participant;
+
         switch (eventType) {
             case 'INSERT':
-                if (!this.participants.find(p => p.id === participant.id)) {
-                    this.participants.push(participant);
-                    this.notify('joined', participant);
+                if (!this.participants.find(p => p.id === normalizedParticipant.id)) {
+                    this.participants.push(normalizedParticipant);
+                    this.notify('joined', normalizedParticipant);
+                }
+
+                if (!normalizedParticipant?.display_name) {
+                    void this.refreshRosterSnapshot();
                 }
                 break;
 
             case 'UPDATE':
-                const updateIndex = this.participants.findIndex(p => p.id === participant.id);
+                const updateIndex = this.participants.findIndex(p => p.id === normalizedParticipant.id);
                 if (updateIndex !== -1) {
                     const wasActive = this.participants[updateIndex].is_active;
-                    this.participants[updateIndex] = participant;
+                    this.participants[updateIndex] = normalizedParticipant;
 
-                    if (wasActive && !participant.is_active) {
-                        this.notify('left', participant);
+                    if (wasActive && !normalizedParticipant.is_active) {
+                        this.notify('left', normalizedParticipant);
                     } else {
-                        this.notify('updated', participant);
+                        this.notify('updated', normalizedParticipant);
                     }
+                } else if (normalizedParticipant) {
+                    this.participants.push(normalizedParticipant);
+                    this.notify('joined', normalizedParticipant);
+                }
+
+                if (!normalizedParticipant?.display_name) {
+                    void this.refreshRosterSnapshot();
                 }
                 break;
 
             case 'DELETE':
-                this.participants = this.participants.filter(p => p.id !== participant.id);
-                this.notify('removed', participant);
+                this.participants = this.participants.filter(p => p.id !== normalizedParticipant.id);
+                this.notify('removed', normalizedParticipant);
                 break;
         }
 
@@ -557,6 +610,7 @@ class ParticipantsStore {
         this.sessionId = null;
         this.currentParticipantId = null;
         this.lastLoadError = null;
+        this.pendingRosterRefresh = null;
         this.notify('reset', []);
         logger.info('Participants store reset');
     }

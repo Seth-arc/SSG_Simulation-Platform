@@ -91,4 +91,78 @@ describe('ParticipantsStore resilience', () => {
 
         participantsStore.reset();
     });
+
+    it('preserves participant names when realtime updates omit joined participant data', async () => {
+        mockDatabase.getActiveParticipants.mockResolvedValue([{
+            id: 'seat-participant-1',
+            session_id: 'session-1',
+            participant_id: 'participant-1',
+            role: 'blue_facilitator',
+            display_name: 'Morgan',
+            client_id: 'client-1',
+            is_active: true,
+            heartbeat_at: '2026-04-08T15:00:00.000Z'
+        }]);
+
+        const { participantsStore } = await loadParticipantsModule();
+        await participantsStore.initialize('session-1');
+
+        participantsStore.updateFromServer('UPDATE', {
+            id: 'seat-participant-1',
+            session_id: 'session-1',
+            participant_id: 'participant-1',
+            role: 'blue_facilitator',
+            is_active: true,
+            heartbeat_at: '2026-04-08T15:01:00.000Z'
+        });
+
+        expect(participantsStore.getAll()).toEqual([
+            expect.objectContaining({
+                id: 'seat-participant-1',
+                display_name: 'Morgan',
+                heartbeat_at: '2026-04-08T15:01:00.000Z'
+            })
+        ]);
+
+        participantsStore.reset();
+    });
+
+    it('refreshes the roster when a realtime participant insert arrives without a display name', async () => {
+        mockDatabase.getActiveParticipants
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{
+                id: 'seat-participant-2',
+                session_id: 'session-1',
+                participant_id: 'participant-2',
+                role: 'viewer',
+                display_name: 'Taylor',
+                client_id: 'client-2',
+                is_active: true,
+                heartbeat_at: '2026-04-08T15:02:00.000Z'
+            }]);
+
+        const { participantsStore } = await loadParticipantsModule();
+        await participantsStore.initialize('session-1');
+
+        participantsStore.updateFromServer('INSERT', {
+            id: 'seat-participant-2',
+            session_id: 'session-1',
+            participant_id: 'participant-2',
+            role: 'viewer',
+            is_active: true,
+            heartbeat_at: '2026-04-08T15:02:00.000Z'
+        });
+
+        await participantsStore.pendingRosterRefresh;
+
+        expect(mockDatabase.getActiveParticipants).toHaveBeenCalledTimes(2);
+        expect(participantsStore.getAll()).toEqual([
+            expect.objectContaining({
+                id: 'seat-participant-2',
+                display_name: 'Taylor'
+            })
+        ]);
+
+        participantsStore.reset();
+    });
 });
