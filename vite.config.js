@@ -64,8 +64,7 @@ export default defineConfig(({ mode }) => {
                 },
                 output: {
                     manualChunks: {
-                        supabase: ['@supabase/supabase-js'],
-                        export: ['xlsx', 'jspdf', 'jspdf-autotable', 'jszip']
+                        supabase: ['@supabase/supabase-js']
                     }
                 }
             }

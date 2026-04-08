@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { exportSessionActionsCsv, exportSessionParticipantsCsv } from './exportCsv.js';
 import { buildJsonExportPayload } from './exportJson.js';
-import { generatePrintableReportFromData } from './exportPdf.js';
+import * as exportFeature from './index.js';
 
 describe('admin export helpers', () => {
     it('builds explicit JSON payloads from selected-session data', () => {
@@ -57,19 +59,38 @@ describe('admin export helpers', () => {
         expect(participantsCsv).toContain('Alex');
     });
 
-    it('includes selected-session metadata in printable reports', () => {
-        const html = generatePrintableReportFromData({
-            session: {
-                id: 'session-1',
-                name: 'Alpha',
-                metadata: { session_code: 'ALPHA2026' }
-            },
-            gameState: { move: 2, phase: 4 },
-            participants: [{ display_name: 'Alex', role: 'blue_facilitator', is_active: true }]
-        });
+    it('exports only JSON and CSV helpers from the feature barrel', () => {
+        expect(Object.keys(exportFeature)).toEqual(expect.arrayContaining([
+            'arrayToCsv',
+            'buildJsonExportPayload',
+            'createExportPanel',
+            'downloadCsv',
+            'downloadJson',
+            'downloadJsonData',
+            'exportActionsCsv',
+            'exportAllCsv',
+            'exportParticipantsCsv',
+            'exportRequestsCsv',
+            'exportSessionActionsCsv',
+            'exportSessionParticipantsCsv',
+            'exportSessionRequestsCsv',
+            'exportSessionTimelineCsv',
+            'exportSubset',
+            'exportTimelineCsv',
+            'exportToJson',
+            'showExportModal'
+        ]));
+        expect(exportFeature).not.toHaveProperty('generatePrintableReport');
+        expect(exportFeature).not.toHaveProperty('openPrintableReport');
+        expect(exportFeature).not.toHaveProperty('printReport');
+    });
 
-        expect(html).toContain('Alpha');
-        expect(html).toContain('ALPHA2026');
-        expect(html).toContain('Active Participants');
+    it('removes PDF, XLSX, and ZIP controls from the live operator markup', () => {
+        const masterHtml = readFileSync(new URL('../../../master.html', import.meta.url), 'utf8');
+
+        expect(masterHtml).not.toContain('exportPdfBtn');
+        expect(masterHtml).not.toContain('Print / PDF');
+        expect(masterHtml).not.toContain('XLSX');
+        expect(masterHtml).not.toContain('ZIP');
     });
 });

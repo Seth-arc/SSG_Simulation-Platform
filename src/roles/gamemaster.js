@@ -21,8 +21,7 @@ import {
     exportSessionActionsCsv,
     exportSessionRequestsCsv,
     exportSessionTimelineCsv,
-    exportSessionParticipantsCsv,
-    openPrintableReportFromData
+    exportSessionParticipantsCsv
 } from '../features/export/index.js';
 import { navigateToApp } from '../core/navigation.js';
 import { OPERATOR_SURFACES } from '../core/teamContext.js';
@@ -51,6 +50,42 @@ function buildFallbackBundle(session) {
     };
 }
 
+function isConnectedParticipant(participant = {}) {
+    if (typeof participant?.is_active === 'boolean') {
+        return participant.is_active;
+    }
+
+    return true;
+}
+
+function getConnectedParticipants(participants = []) {
+    return participants.filter((participant) => isConnectedParticipant(participant));
+}
+
+function buildParticipantSummary(participants = []) {
+    const total = participants.length;
+    const connected = getConnectedParticipants(participants).length;
+
+    return {
+        total,
+        connected
+    };
+}
+
+function formatParticipantSummaryLabel(participants = []) {
+    const { total, connected } = buildParticipantSummary(participants);
+
+    if (total === 0) {
+        return 'No participants have joined this session.';
+    }
+
+    if (connected === total) {
+        return `${connected} connected participant${connected === 1 ? '' : 's'}`;
+    }
+
+    return `${connected} connected / ${total} total participants`;
+}
+
 export function getGameMasterAccessState(sessionStoreRef = sessionStore) {
     const role = sessionStoreRef.getRole?.() || sessionStoreRef.getSessionData?.()?.role || null;
     const cachedOperatorAccess = role === 'white' && sessionStoreRef.hasOperatorAccess?.(
@@ -68,7 +103,10 @@ export function getGameMasterAccessState(sessionStoreRef = sessionStore) {
 export function buildDashboardModel(sessionBundles = []) {
     return {
         activeSessions: sessionBundles.length,
-        totalParticipants: sessionBundles.reduce((sum, bundle) => sum + (bundle.participants?.length || 0), 0),
+        totalParticipants: sessionBundles.reduce(
+            (sum, bundle) => sum + buildParticipantSummary(bundle.participants || []).connected,
+            0
+        ),
         totalActions: sessionBundles.reduce((sum, bundle) => sum + (bundle.actions?.length || 0), 0),
         pendingRequests: sessionBundles.reduce(
             (sum, bundle) => sum + (bundle.requests?.filter((request) => request.status === 'pending').length || 0),
@@ -90,7 +128,7 @@ export function buildRecentActivityModel(sessionBundles = [], limit = 8) {
 
 export function buildConnectedParticipantsModel(sessionBundles = [], limit = 10) {
     return sessionBundles
-        .flatMap((bundle) => (bundle.participants || []).map((participant) => ({
+        .flatMap((bundle) => getConnectedParticipants(bundle.participants || []).map((participant) => ({
             ...participant,
             sessionId: bundle.session?.id || null,
             sessionName: bundle.session?.name || 'Unknown Session'
@@ -101,33 +139,27 @@ export function buildConnectedParticipantsModel(sessionBundles = [], limit = 10)
         .slice(0, limit);
 }
 
-export function getAdminExportButtonConfig({ supportsPdf = true } = {}) {
-    const buttons = [
+export function getAdminExportButtonConfig() {
+    return [
         { id: 'exportJsonBtn', action: 'json', successLabel: 'JSON' },
         { id: 'exportActionsCsvBtn', action: 'csv-actions', successLabel: 'Actions CSV' },
         { id: 'exportRequestsCsvBtn', action: 'csv-requests', successLabel: 'RFIs CSV' },
         { id: 'exportTimelineCsvBtn', action: 'csv-timeline', successLabel: 'Timeline CSV' },
         { id: 'exportParticipantsCsvBtn', action: 'csv-participants', successLabel: 'Participants CSV' }
     ];
-
-    if (supportsPdf) {
-        buttons.push({ id: 'exportPdfBtn', action: 'pdf', successLabel: 'Print view' });
-    }
-
-    return buttons;
 }
 
 export function buildExportSelectionState(sessionBundle = null) {
     if (!sessionBundle?.session) {
         return {
             disabled: true,
-            message: 'Select a session before exporting data.'
+            message: 'Select a session before exporting JSON or CSV data.'
         };
     }
 
     return {
         disabled: false,
-        message: `Exporting data for ${sessionBundle.session.name}.`
+        message: `JSON and CSV exports are ready for ${sessionBundle.session.name}.`
     };
 }
 
@@ -416,7 +448,7 @@ export class GameMasterController {
                 <span class="stat-value">${stats.activeSessions}</span>
             </div>
             <div class="card stat-card">
-                <span class="stat-label">Active Participants</span>
+                <span class="stat-label">Connected Participants</span>
                 <span class="stat-value">${stats.totalParticipants}</span>
             </div>
             <div class="card stat-card">
@@ -437,7 +469,7 @@ export class GameMasterController {
         if (!activities.length) {
             container.innerHTML = `
                 <div style="padding: var(--space-4); text-align: center; color: var(--color-text-muted);">
-                    No recent activity recorded.
+                    No recent activity has been recorded for active sessions.
                 </div>
             `;
             return;
@@ -472,7 +504,7 @@ export class GameMasterController {
         if (!participants.length) {
             container.innerHTML = `
                 <div style="padding: var(--space-4); text-align: center; color: var(--color-text-muted);">
-                    Waiting for connections...
+                    No participants are currently connected.
                 </div>
             `;
             return;
@@ -713,6 +745,7 @@ export class GameMasterController {
         const currentMove = gameState?.move ?? 1;
         const currentPhase = gameState?.phase ?? 1;
         const pendingRequests = requests.filter((request) => request.status === 'pending').length;
+        const participantSummary = buildParticipantSummary(participants);
 
         detailContainer.innerHTML = `
             <div class="session-detail-header" style="margin-bottom: var(--space-6);">
@@ -737,7 +770,8 @@ export class GameMasterController {
                 </div>
                 <div class="card card-bordered" style="padding: var(--space-4);">
                     <h4 class="text-sm font-semibold text-gray-500">Participants</h4>
-                    <p class="text-2xl font-bold">${participants.length}</p>
+                    <p class="text-2xl font-bold">${participantSummary.total}</p>
+                    <p class="text-xs text-gray-500">${participantSummary.connected} currently connected</p>
                 </div>
                 <div class="card card-bordered" style="padding: var(--space-4);">
                     <h4 class="text-sm font-semibold text-gray-500">Pending RFIs</h4>
@@ -784,7 +818,7 @@ export class GameMasterController {
 
     renderParticipantsTable(participants) {
         if (!participants.length) {
-            return '<p class="text-muted">No participants have joined yet.</p>';
+            return '<p class="text-muted">No participants have joined this session yet.</p>';
         }
 
         return `
@@ -825,18 +859,18 @@ export class GameMasterController {
         if (!stateLabel || !container) return;
 
         if (!sessionBundle?.session) {
-            stateLabel.textContent = 'Select a session from Session Management to view participants.';
+            stateLabel.textContent = 'Select a session from Session Management to review live participant data.';
             container.style.display = 'flex';
             container.style.alignItems = 'center';
             container.style.justifyContent = 'center';
             container.style.minHeight = '200px';
             container.innerHTML = `
-                <p class="text-gray-500">Select a session from the Session Management tab to view participants</p>
+                <p class="text-gray-500">Select a session from Session Management to view participants.</p>
             `;
             return;
         }
 
-        stateLabel.textContent = `Showing participants for ${sessionBundle.session.name}.`;
+        stateLabel.textContent = `Showing live participant data for ${sessionBundle.session.name}.`;
         container.style.display = 'block';
         container.style.minHeight = 'auto';
         container.innerHTML = `
@@ -846,7 +880,7 @@ export class GameMasterController {
                         <h3 class="text-base font-semibold">${this.escapeHtml(sessionBundle.session.name)}</h3>
                         <p class="text-sm text-gray-500">Code ${this.escapeHtml(sessionBundle.session.metadata?.session_code || 'N/A')}</p>
                     </div>
-                    <span class="text-sm text-gray-500">${sessionBundle.participants.length} active participants</span>
+                    <span class="text-sm text-gray-500">${formatParticipantSummaryLabel(sessionBundle.participants)}</span>
                 </div>
                 ${this.renderParticipantsTable(sessionBundle.participants)}
             </div>
@@ -942,12 +976,6 @@ export class GameMasterController {
                     break;
                 case 'csv-participants':
                     downloadCsv(exportSessionParticipantsCsv(bundle.participants), `${baseFilename}-participants.csv`);
-                    break;
-                case 'pdf':
-                    openPrintableReportFromData(bundle, {
-                        title: `ESG Session Report: ${bundle.session?.name || 'Session'}`,
-                        includeParticipants: true
-                    });
                     break;
                 default:
                     throw new Error(`Unhandled export action: ${action}`);

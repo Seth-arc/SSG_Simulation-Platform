@@ -14,11 +14,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0",
-    "jspdf": "^2.5.1",
-    "jspdf-autotable": "^3.8.1",
-    "jszip": "^3.10.1",
-    "xlsx": "^0.18.5"
+    "@supabase/supabase-js": "^2.39.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.40.0",

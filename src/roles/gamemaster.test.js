@@ -9,18 +9,18 @@ import {
 } from './gamemaster.js';
 
 describe('GameMaster dashboard mapping', () => {
-    it('computes real aggregate dashboard counts from session bundles', () => {
+    it('computes connected participant counts from live session bundles', () => {
         const bundles = [
             {
                 session: { id: 'session-1', name: 'Alpha' },
-                participants: [{ id: 'p1' }, { id: 'p2' }],
+                participants: [{ id: 'p1', is_active: true }, { id: 'p2', is_active: false }],
                 actions: [{ id: 'a1' }, { id: 'a2' }, { id: 'a3' }],
                 requests: [{ id: 'r1', status: 'pending' }, { id: 'r2', status: 'answered' }],
                 timeline: []
             },
             {
                 session: { id: 'session-2', name: 'Bravo' },
-                participants: [{ id: 'p3' }],
+                participants: [{ id: 'p3', is_active: true }],
                 actions: [{ id: 'a4' }],
                 requests: [{ id: 'r3', status: 'pending' }, { id: 'r4', status: 'pending' }],
                 timeline: []
@@ -29,7 +29,7 @@ describe('GameMaster dashboard mapping', () => {
 
         expect(buildDashboardModel(bundles)).toEqual({
             activeSessions: 2,
-            totalParticipants: 3,
+            totalParticipants: 2,
             totalActions: 4,
             pendingRequests: 3
         });
@@ -57,17 +57,8 @@ describe('GameMaster dashboard mapping', () => {
 });
 
 describe('GameMaster export wiring', () => {
-    it('matches the rendered export button set and only includes PDF when supported', () => {
+    it('matches the rendered export button set for the live JSON/CSV-only surface', () => {
         expect(getAdminExportButtonConfig().map((config) => config.id)).toEqual([
-            'exportJsonBtn',
-            'exportActionsCsvBtn',
-            'exportRequestsCsvBtn',
-            'exportTimelineCsvBtn',
-            'exportParticipantsCsvBtn',
-            'exportPdfBtn'
-        ]);
-
-        expect(getAdminExportButtonConfig({ supportsPdf: false }).map((config) => config.id)).toEqual([
             'exportJsonBtn',
             'exportActionsCsvBtn',
             'exportRequestsCsvBtn',
@@ -79,14 +70,14 @@ describe('GameMaster export wiring', () => {
     it('disables export controls until a session is selected', () => {
         expect(buildExportSelectionState()).toEqual({
             disabled: true,
-            message: 'Select a session before exporting data.'
+            message: 'Select a session before exporting JSON or CSV data.'
         });
 
         expect(buildExportSelectionState({
             session: { id: 'session-1', name: 'Alpha' }
         })).toEqual({
             disabled: false,
-            message: 'Exporting data for Alpha.'
+            message: 'JSON and CSV exports are ready for Alpha.'
         });
     });
 });

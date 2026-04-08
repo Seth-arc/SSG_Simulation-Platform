@@ -1,6 +1,6 @@
 /**
  * Export Feature Module
- * Data export utilities for JSON, CSV, and PDF formats
+ * Data export utilities for JSON and CSV formats
  */
 
 export { exportToJson, downloadJson, exportSubset, buildJsonExportPayload, downloadJsonData } from './exportJson.js';
@@ -17,12 +17,4 @@ export {
     exportAllCsv,
     arrayToCsv
 } from './exportCsv.js';
-export {
-    generatePrintableReport,
-    generatePrintableReportFromData,
-    openPrintableReport,
-    openPrintableReportFromData,
-    printReport,
-    printReportFromData
-} from './exportPdf.js';
 export { createExportPanel, showExportModal } from './ExportPanel.js';

@@ -5,7 +5,6 @@
 
 import { downloadJson } from './exportJson.js';
 import { downloadCsv, exportActionsCsv, exportRequestsCsv, exportTimelineCsv, exportParticipantsCsv } from './exportCsv.js';
-import { openPrintableReport, printReport } from './exportPdf.js';
 import { sessionStore } from '../../stores/session.js';
 
 /**
@@ -90,23 +89,6 @@ export function createExportPanel(options = {}) {
     }
 
     /**
-     * Handle PDF/print export
-     */
-    function handlePdfExport() {
-        const includeActions = element.querySelector('#export-actions')?.checked ?? true;
-        const includeRequests = element.querySelector('#export-requests')?.checked ?? true;
-        const includeTimeline = element.querySelector('#export-timeline')?.checked ?? true;
-
-        openPrintableReport({
-            title: 'ESG Simulation Report',
-            includeActions,
-            includeRequests,
-            includeTimeline,
-            includeSummary: true
-        });
-    }
-
-    /**
      * Render the component
      */
     function render() {
@@ -170,13 +152,6 @@ export function createExportPanel(options = {}) {
                 </div>
             </div>
 
-            <div class="export-panel__section">
-                <h4 class="export-panel__section-title">Print / PDF</h4>
-                <p class="export-panel__description">Generate printable report (use browser print to save as PDF)</p>
-                <button type="button" class="btn btn--secondary export-panel__btn" data-action="pdf">
-                    Open Print View
-                </button>
-            </div>
         `;
 
         // Bind event handlers
@@ -199,9 +174,6 @@ export function createExportPanel(options = {}) {
                     break;
                 case 'csv-participants':
                     handleCsvExport('participants');
-                    break;
-                case 'pdf':
-                    handlePdfExport();
                     break;
             }
         });

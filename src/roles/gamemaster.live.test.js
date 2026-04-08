@@ -144,18 +144,30 @@ vi.mock('../utils/logger.js', () => ({
 }));
 
 function createElement() {
+    const listeners = new Map();
+
     return {
         innerHTML: '',
         textContent: '',
         value: '',
         style: {},
         disabled: false,
+        dataset: {},
         classList: {
             add: vi.fn(),
             remove: vi.fn(),
             toggle: vi.fn()
         },
-        addEventListener: vi.fn(),
+        addEventListener: vi.fn((eventName, listener) => {
+            listeners.set(eventName, listener);
+        }),
+        click() {
+            listeners.get('click')?.({
+                target: this,
+                currentTarget: this,
+                preventDefault: vi.fn()
+            });
+        },
         querySelector: vi.fn(() => null),
         querySelectorAll: vi.fn(() => [])
     };
@@ -168,13 +180,20 @@ async function loadGameMasterModule() {
 }
 
 describe('GameMaster live session monitoring', () => {
+    let elements;
+
     beforeEach(() => {
         vi.clearAllMocks();
-        const elements = Object.fromEntries([
+        elements = Object.fromEntries([
             'createSessionBtn',
             'refreshDashboardBtn',
             'participantsSessionSelect',
             'exportSessionSelect',
+            'exportJsonBtn',
+            'exportActionsCsvBtn',
+            'exportRequestsCsvBtn',
+            'exportTimelineCsvBtn',
+            'exportParticipantsCsvBtn',
             'sessionsList',
             'statsGrid',
             'recentActivity',
@@ -225,5 +244,42 @@ describe('GameMaster live session monitoring', () => {
         expect(mockTimelineStore.subscribe).toHaveBeenCalledTimes(1);
         expect(mockParticipantsStore.subscribe).toHaveBeenCalledTimes(1);
         expect(mockSyncService.initialize).toHaveBeenCalledWith('session-gm-1');
+    });
+
+    it('wires each live export button to the matching JSON or CSV action', async () => {
+        const { GameMasterController } = await loadGameMasterModule();
+        const controller = new GameMasterController();
+        const exportSpy = vi.fn();
+
+        controller.exportData = exportSpy;
+        controller.bindEventListeners();
+
+        elements.exportJsonBtn.click();
+        elements.exportActionsCsvBtn.click();
+        elements.exportRequestsCsvBtn.click();
+        elements.exportTimelineCsvBtn.click();
+        elements.exportParticipantsCsvBtn.click();
+
+        expect(exportSpy.mock.calls).toEqual([
+            ['json'],
+            ['csv-actions'],
+            ['csv-requests'],
+            ['csv-timeline'],
+            ['csv-participants']
+        ]);
+    });
+
+    it('disables JSON and CSV exports until a session is selected', async () => {
+        const { GameMasterController } = await loadGameMasterModule();
+        const controller = new GameMasterController();
+
+        controller.updateExportAvailability(null);
+
+        expect(elements.exportSelectionState.textContent).toBe('Select a session before exporting JSON or CSV data.');
+        expect(elements.exportJsonBtn.disabled).toBe(true);
+        expect(elements.exportActionsCsvBtn.disabled).toBe(true);
+        expect(elements.exportRequestsCsvBtn.disabled).toBe(true);
+        expect(elements.exportTimelineCsvBtn.disabled).toBe(true);
+        expect(elements.exportParticipantsCsvBtn.disabled).toBe(true);
     });
 });
