@@ -81,6 +81,10 @@ export function isWhiteCellOperatorRole(role = '') {
 }
 
 export function normalizeWhiteCellOperatorRole(role = '') {
+    if (typeof role !== 'string') {
+        return role ?? null;
+    }
+
     const match = role.match(/^(blue|red|green)_whitecell(?:_(lead|support))?$/);
     if (!match) {
         return role;
@@ -93,6 +97,14 @@ export function normalizeWhiteCellOperatorRole(role = '') {
 }
 
 export function parseTeamRole(role = '') {
+    if (typeof role !== 'string') {
+        return {
+            teamId: null,
+            surface: null,
+            operatorRole: null
+        };
+    }
+
     if (role === 'viewer') {
         return {
             teamId: null,

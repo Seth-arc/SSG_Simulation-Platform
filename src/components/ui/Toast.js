@@ -22,20 +22,61 @@ function getContainer() {
     return toastContainer;
 }
 
+function normalizeToastArgs(messageOrConfig, options = {}) {
+    const defaults = {
+        type: 'info',
+        duration: CONFIG.TOAST_DURATION_MS,
+        dismissible: true
+    };
+
+    if (messageOrConfig && typeof messageOrConfig === 'object' && !Array.isArray(messageOrConfig)) {
+        const merged = {
+            ...defaults,
+            ...messageOrConfig,
+            ...options
+        };
+
+        return {
+            message: String(messageOrConfig.message ?? ''),
+            type: merged.type,
+            duration: merged.duration,
+            dismissible: merged.dismissible
+        };
+    }
+
+    const merged = {
+        ...defaults,
+        ...options
+    };
+
+    return {
+        message: String(messageOrConfig ?? ''),
+        type: merged.type,
+        duration: merged.duration,
+        dismissible: merged.dismissible
+    };
+}
+
 /**
  * Show a toast notification
- * @param {string} message - Message to display
+ * Supports both:
+ * - showToast('Message', { type: 'success' })
+ * - showToast({ message: 'Message', type: 'success' })
+ * @param {string|Object} messageOrConfig - Message text or config object
  * @param {Object} options - Toast options
  * @param {'info'|'success'|'error'|'warning'} options.type - Toast type
  * @param {number} options.duration - Duration in milliseconds
  * @param {boolean} options.dismissible - Whether toast can be dismissed
  * @returns {HTMLElement} Toast element
  */
-export function showToast(message, {
-    type = 'info',
-    duration = CONFIG.TOAST_DURATION_MS,
-    dismissible = true
-} = {}) {
+export function showToast(messageOrConfig, options = {}) {
+    const {
+        message,
+        type,
+        duration,
+        dismissible
+    } = normalizeToastArgs(messageOrConfig, options);
+
     const container = getContainer();
 
     const toast = document.createElement('div');

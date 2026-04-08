@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 import { dumpE2EMockBackend, enableE2EMockBackend } from './support/mockBackend.js';
 
-test('session creation, role join, action submit, and White Cell adjudication', async ({ browser }) => {
+test('@smoke session creation, role join, action submit, and White Cell adjudication', async ({ browser }) => {
     const context = await browser.newContext();
     await enableE2EMockBackend(context);
 
@@ -71,7 +71,7 @@ test('session creation, role join, action submit, and White Cell adjudication', 
         await page.locator('#displayName').fill('White Cell Lead');
         await page.locator('.team-option[data-team="blue"]').click();
         await page.locator('#operatorAccessCode').fill(operatorAccessCode);
-        await page.locator('#operatorWhiteCellBtn').click();
+        await page.locator('#operatorWhiteCellLeadBtn').click();
 
         await page.waitForURL(/whitecell\.html/);
         await page.locator('.sidebar-link[data-section="adjudication"]').click();
