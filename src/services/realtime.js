@@ -65,6 +65,15 @@ class RealtimeService {
             return;
         }
 
+        if (this.connected && this.sessionId === sessionId && this.channels.size > 0) {
+            logger.info('Real-time service already initialized for this session');
+            return;
+        }
+
+        if (this.sessionId && this.sessionId !== sessionId) {
+            await this.reset();
+        }
+
         this.sessionId = sessionId;
         logger.info('Initializing real-time service for session:', sessionId);
 

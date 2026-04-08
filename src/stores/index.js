@@ -11,3 +11,4 @@ export { actionsStore } from './actions.js';
 export { requestsStore, REQUEST_STATUS } from './requests.js';
 export { timelineStore, EVENT_TYPES } from './timeline.js';
 export { participantsStore } from './participants.js';
+export { communicationsStore } from './communications.js';

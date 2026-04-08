@@ -11,10 +11,13 @@
  */
 
 import { sessionStore } from '../stores/session.js';
+import { gameStateStore } from '../stores/gameState.js';
+import { actionsStore } from '../stores/actions.js';
+import { timelineStore } from '../stores/timeline.js';
 import { database } from '../services/database.js';
+import { syncService } from '../services/sync.js';
 import { createLogger } from '../utils/logger.js';
 import { showToast } from '../components/ui/Toast.js';
-import { showInlineLoader } from '../components/ui/Loader.js';
 import { createBadge, createStatusBadge, createPriorityBadge } from '../components/ui/Badge.js';
 import { formatDateTime, formatRelativeTime } from '../utils/formatting.js';
 import { debounce } from '../utils/debounce.js';
@@ -99,7 +102,7 @@ export class NotetakerController {
         this.observationTimeline = [];
         this.dynamicsAutoSaveDebounce = null;
         this.allianceAutoSaveDebounce = null;
-        this.unsubscribeSession = null;
+        this.storeUnsubscribers = [];
         this.currentMove = 1;
         this.currentPhase = 1;
         this.initialLoadComplete = false;
@@ -134,11 +137,16 @@ export class NotetakerController {
         }
 
         this.configureTeamLabels();
+        await syncService.initialize(sessionId, {
+            participantId: sessionStore.getSessionParticipantId?.() || null
+        });
         this.bindEventListeners();
         this.setupAutoSave();
-        this.subscribeToSessionChanges();
-        await this.loadInitialData();
+        this.subscribeToLiveData();
+        this.syncActionsFromStore();
+        this.syncTimelineFromStore();
         this.initialLoadComplete = true;
+        await this.loadCurrentMoveData();
 
         logger.info('Notetaker interface initialized');
     }
@@ -204,40 +212,28 @@ export class NotetakerController {
     }
 
     /**
-     * Subscribe to move and phase changes from shared session state
+     * Subscribe to shared live stores
      */
-    subscribeToSessionChanges() {
-        this.unsubscribeSession = sessionStore.subscribe((snapshot) => {
-            const nextMove = snapshot.sessionData?.gameState?.move ?? 1;
-            const nextPhase = snapshot.sessionData?.gameState?.phase ?? 1;
-            const hasMoveChanged = nextMove !== this.currentMove;
+    subscribeToLiveData() {
+        this.storeUnsubscribers.push(
+            gameStateStore.subscribe((_event, state) => {
+                this.syncGameState(state);
+            })
+        );
 
-            this.currentMove = nextMove;
-            this.currentPhase = nextPhase;
+        this.storeUnsubscribers.push(
+            actionsStore.subscribe(() => {
+                this.syncActionsFromStore();
+            })
+        );
 
-            if (this.initialLoadComplete && hasMoveChanged) {
-                this.handleMoveChange();
-            }
-        });
-    }
+        this.storeUnsubscribers.push(
+            timelineStore.subscribe(() => {
+                this.syncTimelineFromStore();
+            })
+        );
 
-    /**
-     * Load initial data
-     */
-    async loadInitialData() {
-        const sessionId = sessionStore.getSessionId();
-        if (!sessionId) return;
-
-        try {
-            await Promise.all([
-                this.loadCaptures(),
-                this.loadActions(),
-                this.loadCurrentMoveData(),
-                this.loadTimeline()
-            ]);
-        } catch (err) {
-            logger.error('Failed to load initial data:', err);
-        }
+        this.syncGameState(gameStateStore.getState() || sessionStore.getSessionData()?.gameState || null);
     }
 
     /**
@@ -255,28 +251,29 @@ export class NotetakerController {
     /**
      * Load captures from timeline
      */
-    async loadCaptures() {
-        const sessionId = sessionStore.getSessionId();
-        const container = document.getElementById('recentCaptures');
-        if (!container || !sessionId) return;
+    syncGameState(state) {
+        const nextMove = state?.move ?? 1;
+        const nextPhase = state?.phase ?? 1;
+        const hasMoveChanged = nextMove !== this.currentMove;
 
-        const loader = showInlineLoader(container, { message: 'Loading captures...' });
+        this.currentMove = nextMove;
+        this.currentPhase = nextPhase;
 
-        try {
-            const data = await database.fetchTimeline(sessionId);
-
-            this.captures = (data || []).filter(t => {
-                const captureType = t.type || t.event_type;
-                return ['NOTE', 'MOMENT', 'QUOTE'].includes(captureType) && t.team === this.teamId;
-            }).slice(0, 20);
-
-            this.renderCaptures();
-            logger.info(`Loaded ${this.captures.length} captures`);
-        } catch (err) {
-            logger.error('Failed to load captures:', err);
-        } finally {
-            if (loader) loader.hide();
+        if (this.initialLoadComplete && hasMoveChanged) {
+            void this.handleMoveChange();
         }
+    }
+
+    syncTimelineFromStore() {
+        const relevantEvents = timelineStore.getAll()
+            .filter((event) => [this.teamId, 'white_cell'].includes(event.team));
+
+        this.captures = relevantEvents
+            .filter((event) => ['NOTE', 'MOMENT', 'QUOTE'].includes(event.type || event.event_type))
+            .slice(0, 20);
+
+        this.renderCaptures();
+        this.renderTimeline(relevantEvents);
     }
 
     /**
@@ -346,6 +343,7 @@ export class NotetakerController {
             };
 
             const createdEvent = await database.createTimelineEvent(captureData);
+            timelineStore.updateFromServer('INSERT', createdEvent);
             const observationEntry = createObservationTimelineEntry({
                 id: createdEvent?.id || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : null),
                 type,
@@ -367,10 +365,6 @@ export class NotetakerController {
             }
 
             contentInput.value = '';
-            await Promise.all([
-                this.loadCaptures(),
-                this.loadTimeline()
-            ]);
         } catch (err) {
             logger.error('Failed to save capture:', err);
             showToast('Failed to save observation', { type: 'error' });
@@ -378,25 +372,11 @@ export class NotetakerController {
     }
 
     /**
-     * Load actions (read-only view)
+     * Sync actions from the live store
      */
-    async loadActions() {
-        const sessionId = sessionStore.getSessionId();
-        const container = document.getElementById('actionsListView');
-        if (!container || !sessionId) return;
-
-        const loader = showInlineLoader(container, { message: 'Loading actions...' });
-
-        try {
-            const data = await database.fetchActions(sessionId, { team: this.teamId });
-
-            this.actions = data || [];
-            this.renderActionsView();
-        } catch (err) {
-            logger.error('Failed to load actions:', err);
-        } finally {
-            if (loader) loader.hide();
-        }
+    syncActionsFromStore() {
+        this.actions = actionsStore.getByTeam(this.teamId);
+        this.renderActionsView();
     }
 
     /**
@@ -591,7 +571,7 @@ export class NotetakerController {
      * @returns {Object} Current game state
      */
     getCurrentGameState() {
-        return sessionStore.getSessionData()?.gameState || {
+        return gameStateStore.getState() || sessionStore.getSessionData()?.gameState || {
             move: this.currentMove,
             phase: this.currentPhase
         };
@@ -626,28 +606,6 @@ export class NotetakerController {
 
         indicator.textContent = AUTO_SAVE_TEXT[status] || AUTO_SAVE_TEXT.idle;
         indicator.dataset.status = status;
-    }
-
-    /**
-     * Load timeline events
-     */
-    async loadTimeline() {
-        const sessionId = sessionStore.getSessionId();
-        const container = document.getElementById('timelineList');
-        if (!container || !sessionId) return;
-
-        const loader = showInlineLoader(container, { message: 'Loading timeline...' });
-
-        try {
-            const data = await database.fetchTimeline(sessionId);
-            const relevantEvents = (data || []).filter((event) => [this.teamId, 'white_cell'].includes(event.team));
-
-            this.renderTimeline(relevantEvents);
-        } catch (err) {
-            logger.error('Failed to load timeline:', err);
-        } finally {
-            if (loader) loader.hide();
-        }
     }
 
     /**
@@ -719,7 +677,8 @@ export class NotetakerController {
     destroy() {
         this.dynamicsAutoSaveDebounce?.flush?.();
         this.allianceAutoSaveDebounce?.flush?.();
-        this.unsubscribeSession?.();
+        this.storeUnsubscribers.forEach((unsubscribe) => unsubscribe?.());
+        this.storeUnsubscribers = [];
     }
 }
 

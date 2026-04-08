@@ -525,8 +525,16 @@ class TimelineStore {
         };
         this.initialized = false;
         this.sessionId = null;
-        this.subscribers.clear();
+        this.notify('reset', []);
         logger.info('Timeline store reset');
+    }
+
+    /**
+     * Cleanup store state
+     */
+    destroy() {
+        this.reset();
+        this.subscribers.clear();
     }
 }
 

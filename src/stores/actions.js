@@ -11,7 +11,6 @@
  */
 
 import { database } from '../services/database.js';
-import { sessionStore } from './session.js';
 import { createLogger } from '../utils/logger.js';
 import { ENUMS } from '../core/enums.js';
 
@@ -426,8 +425,16 @@ class ActionsStore {
         };
         this.initialized = false;
         this.sessionId = null;
-        this.subscribers.clear();
+        this.notify('reset', []);
         logger.info('Actions store reset');
+    }
+
+    /**
+     * Cleanup store state
+     */
+    destroy() {
+        this.reset();
+        this.subscribers.clear();
     }
 }
 

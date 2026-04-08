@@ -4,6 +4,7 @@ const {
     mockDatabase,
     mockSessionStore,
     mockEnsureBrowserIdentity,
+    mockSyncService,
     mockShowToast,
     mockShowLoader,
     mockHideLoader
@@ -29,6 +30,9 @@ const {
         setOperatorAuth: vi.fn()
     },
     mockEnsureBrowserIdentity: vi.fn(),
+    mockSyncService: {
+        initialize: vi.fn()
+    },
     mockShowToast: vi.fn(),
     mockShowLoader: vi.fn(() => ({ id: 'loader-1' })),
     mockHideLoader: vi.fn()
@@ -45,6 +49,10 @@ vi.mock('../stores/session.js', () => ({
 vi.mock('../services/supabase.js', () => ({
     getRuntimeConfigStatus: () => ({ ready: true }),
     ensureBrowserIdentity: mockEnsureBrowserIdentity
+}));
+
+vi.mock('../services/sync.js', () => ({
+    syncService: mockSyncService
 }));
 
 vi.mock('../components/ui/Toast.js', () => ({
@@ -139,6 +147,9 @@ describe('landing secure join flow', () => {
         expect(mockDatabase.getActiveSessions).not.toHaveBeenCalled();
         expect(mockDatabase.getActiveParticipants).not.toHaveBeenCalled();
         expect(mockDatabase.claimParticipantSeat).toHaveBeenCalledWith('session-1', 'blue_facilitator', 'Morgan');
+        expect(mockSyncService.initialize).toHaveBeenCalledWith('session-1', {
+            participantId: 'session-participant-1'
+        });
         expect(mockSessionStore.setSessionId).toHaveBeenCalledWith('session-1');
         expect(mockSessionStore.setSessionData).toHaveBeenCalledWith(expect.objectContaining({
             id: 'session-1',
@@ -271,6 +282,9 @@ describe('landing secure join flow', () => {
             operatorName: 'Morgan'
         });
         expect(mockDatabase.claimParticipantSeat).toHaveBeenCalledWith('session-1', 'blue_whitecell_lead', 'Morgan');
+        expect(mockSyncService.initialize).toHaveBeenCalledWith('session-1', {
+            participantId: 'session-participant-1'
+        });
         expect(mockSessionStore.setOperatorAuth).toHaveBeenCalledWith(expect.objectContaining({
             id: 'grant-1',
             surface: 'whitecell',

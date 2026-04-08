@@ -11,7 +11,6 @@
  */
 
 import { database } from '../services/database.js';
-import { sessionStore } from './session.js';
 import { createLogger } from '../utils/logger.js';
 import { CONFIG } from '../core/config.js';
 import { ENUMS } from '../core/enums.js';
@@ -70,14 +69,8 @@ class GameStateStore {
             const data = await database.getGameState(sessionId);
 
             if (data) {
-                this.state = data;
                 this.initialized = true;
-                this.notify('initialized', this.state);
-
-                // Resume timer if it was running
-                if (data.timer_running) {
-                    this.startLocalTimer();
-                }
+                this.applyServerState(data, 'initialized');
 
                 logger.info('Game state loaded:', {
                     move: data.move,
@@ -102,21 +95,10 @@ class GameStateStore {
      * @returns {Promise<GameState>}
      */
     async createInitialState(sessionId) {
-        const initialState = {
-            session_id: sessionId,
-            move: 1,
-            phase: 1,
-            timer_seconds: CONFIG.DEFAULT_TIMER_SECONDS,
-            timer_running: false,
-            timer_last_update: null,
-            status: 'active'
-        };
-
         const data = await database.createGameState(sessionId);
 
-        this.state = data;
         this.initialized = true;
-        this.notify('created', this.state);
+        this.applyServerState(data, 'created');
 
         logger.info('Initial game state created');
         return this.state;
@@ -168,17 +150,15 @@ class GameStateStore {
      */
     async startTimer() {
         if (!this.state || this.state.timer_running) {
-            return;
+            return this.state;
         }
 
         logger.info('Starting timer');
 
-        this.state.timer_running = true;
-        this.state.timer_last_update = new Date().toISOString();
-
-        await this.syncToServer();
-        this.startLocalTimer();
-        this.notify('timer_started', this.state);
+        return this.persistState({
+            timer_running: true,
+            timer_last_update: new Date().toISOString()
+        }, 'timer_started');
     }
 
     /**
@@ -187,17 +167,15 @@ class GameStateStore {
      */
     async pauseTimer() {
         if (!this.state || !this.state.timer_running) {
-            return;
+            return this.state;
         }
 
         logger.info('Pausing timer');
 
-        this.state.timer_running = false;
-        this.state.timer_last_update = new Date().toISOString();
-
-        this.stopLocalTimer();
-        await this.syncToServer();
-        this.notify('timer_paused', this.state);
+        return this.persistState({
+            timer_running: false,
+            timer_last_update: new Date().toISOString()
+        }, 'timer_paused');
     }
 
     /**
@@ -207,18 +185,16 @@ class GameStateStore {
      */
     async resetTimer(seconds = CONFIG.DEFAULT_TIMER_SECONDS) {
         if (!this.state) {
-            return;
+            return this.state;
         }
 
         logger.info('Resetting timer to', seconds, 'seconds');
 
-        this.stopLocalTimer();
-        this.state.timer_seconds = seconds;
-        this.state.timer_running = false;
-        this.state.timer_last_update = new Date().toISOString();
-
-        await this.syncToServer();
-        this.notify('timer_reset', this.state);
+        return this.persistState({
+            timer_seconds: seconds,
+            timer_running: false,
+            timer_last_update: new Date().toISOString()
+        }, 'timer_reset');
     }
 
     /**
@@ -228,14 +204,13 @@ class GameStateStore {
      */
     async setTimer(seconds) {
         if (!this.state) {
-            return;
+            return this.state;
         }
 
-        this.state.timer_seconds = Math.max(0, seconds);
-        this.state.timer_last_update = new Date().toISOString();
-
-        await this.syncToServer();
-        this.notify('timer_updated', this.state);
+        return this.persistState({
+            timer_seconds: Math.max(0, seconds),
+            timer_last_update: new Date().toISOString()
+        }, 'timer_updated');
     }
 
     /**
@@ -255,13 +230,13 @@ class GameStateStore {
                 // Sync to server every 30 seconds to prevent drift
                 const now = Date.now();
                 if (now - this.lastServerSync >= 30000) {
-                    this.syncToServer();
+                    void this.syncToServer();
                     this.lastServerSync = now;
                 }
 
                 // Timer finished
                 if (this.state.timer_seconds <= 0) {
-                    this.pauseTimer();
+                    void this.pauseTimer();
                     this.notify('timer_finished', this.state);
                 }
             }
@@ -299,12 +274,28 @@ class GameStateStore {
         const newPhase = currentPhase + 1;
         logger.info('Advancing phase from', currentPhase, 'to', newPhase);
 
-        this.state.phase = newPhase;
+        return this.persistState({ phase: newPhase }, 'phase_advanced');
+    }
 
-        await this.syncToServer();
-        this.notify('phase_advanced', this.state);
+    /**
+     * Return to previous phase
+     * @returns {Promise<GameState|false>}
+     */
+    async regressPhase() {
+        if (!this.state) {
+            return false;
+        }
 
-        return true;
+        const currentPhase = this.state.phase;
+        if (currentPhase <= 1) {
+            logger.warn('Already at minimum phase');
+            return false;
+        }
+
+        const newPhase = currentPhase - 1;
+        logger.info('Regressing phase from', currentPhase, 'to', newPhase);
+
+        return this.persistState({ phase: newPhase }, 'phase_regressed');
     }
 
     /**
@@ -327,13 +318,34 @@ class GameStateStore {
         const newMove = currentMove + 1;
         logger.info('Advancing move from', currentMove, 'to', newMove);
 
-        this.state.move = newMove;
-        this.state.phase = 1; // Reset phase on move advance
+        return this.persistState({
+            move: newMove,
+            phase: 1
+        }, 'move_advanced');
+    }
 
-        await this.syncToServer();
-        this.notify('move_advanced', this.state);
+    /**
+     * Return to previous move
+     * @returns {Promise<GameState|false>}
+     */
+    async regressMove() {
+        if (!this.state) {
+            return false;
+        }
 
-        return true;
+        const currentMove = this.state.move;
+        if (currentMove <= 1) {
+            logger.warn('Already at minimum move');
+            return false;
+        }
+
+        const newMove = currentMove - 1;
+        logger.info('Regressing move from', currentMove, 'to', newMove);
+
+        return this.persistState({
+            move: newMove,
+            phase: 1
+        }, 'move_regressed');
     }
 
     /**
@@ -343,19 +355,33 @@ class GameStateStore {
      */
     async setStatus(status) {
         if (!this.state) {
-            return;
+            return this.state;
         }
 
         logger.info('Setting game status to:', status);
-
-        this.state.status = status;
 
         if (status === 'paused' || status === 'completed') {
             await this.pauseTimer();
         }
 
-        await this.syncToServer();
-        this.notify('status_changed', this.state);
+        return this.persistState({ status }, 'status_changed');
+    }
+
+    /**
+     * Persist partial state and publish the updated server state
+     * @private
+     * @param {Partial<GameState>} updates
+     * @param {string} event
+     * @returns {Promise<GameState>}
+     */
+    async persistState(updates, event) {
+        if (!this.state?.session_id) {
+            return this.state;
+        }
+
+        const data = await database.updateGameState(this.state.session_id, updates);
+        this.applyServerState(data, event);
+        return this.state;
     }
 
     /**
@@ -369,7 +395,7 @@ class GameStateStore {
         }
 
         try {
-            await database.updateGameState(this.state.session_id, {
+            const data = await database.updateGameState(this.state.session_id, {
                 move: this.state.move,
                 phase: this.state.phase,
                 timer_seconds: this.state.timer_seconds,
@@ -378,6 +404,7 @@ class GameStateStore {
                 status: this.state.status
             });
 
+            this.applyServerState(data, 'synced');
             this.lastServerSync = Date.now();
         } catch (err) {
             logger.error('Error syncing game state:', err);
@@ -385,31 +412,82 @@ class GameStateStore {
     }
 
     /**
+     * Calculate the effective timer seconds from the server payload
+     * @private
+     * @param {GameState} state
+     * @returns {GameState}
+     */
+    normalizeState(state) {
+        if (!state) {
+            return state;
+        }
+
+        const normalizedState = { ...state };
+        const storedSeconds = normalizedState.timer_seconds ?? CONFIG.DEFAULT_TIMER_SECONDS;
+
+        if (!normalizedState.timer_running || !normalizedState.timer_last_update) {
+            normalizedState.timer_seconds = storedSeconds;
+            return normalizedState;
+        }
+
+        const lastUpdate = new Date(normalizedState.timer_last_update).getTime();
+        if (Number.isNaN(lastUpdate)) {
+            normalizedState.timer_seconds = storedSeconds;
+            return normalizedState;
+        }
+
+        const elapsedSeconds = Math.max(0, Math.floor((Date.now() - lastUpdate) / 1000));
+        normalizedState.timer_seconds = Math.max(0, storedSeconds - elapsedSeconds);
+        normalizedState.timer_running = normalizedState.timer_seconds > 0;
+
+        return normalizedState;
+    }
+
+    /**
+     * Apply an authoritative server state to the local store
+     * @private
+     * @param {GameState} nextState
+     * @param {string} event
+     */
+    applyServerState(nextState, event = 'synced') {
+        this.state = this.normalizeState(nextState);
+
+        if (this.state?.timer_running) {
+            this.startLocalTimer();
+        } else {
+            this.stopLocalTimer();
+        }
+
+        this.lastServerSync = Date.now();
+        this.notify(event, this.state);
+    }
+
+    /**
      * Update state from server (for real-time sync)
      * @param {Partial<GameState>} updates - State updates from server
      */
     updateFromServer(updates) {
+        if (!updates) {
+            return;
+        }
+
         if (!this.state) {
-            this.state = updates;
-        } else {
-            // Only apply if server update is newer
-            const serverTime = new Date(updates.last_updated || updates.timer_last_update).getTime();
-            const localTime = new Date(this.state.last_updated || this.state.timer_last_update).getTime();
+            this.applyServerState(updates, 'synced');
+            logger.debug('Game state updated from server');
+            return;
+        }
 
-            if (serverTime > localTime || isNaN(localTime)) {
-                const wasRunning = this.state.timer_running;
-                Object.assign(this.state, updates);
+        const serverTime = new Date(updates.updated_at || updates.last_updated || updates.timer_last_update || 0).getTime();
+        const localTime = new Date(
+            this.state.updated_at || this.state.last_updated || this.state.timer_last_update || 0
+        ).getTime();
 
-                // Handle timer state changes from server
-                if (updates.timer_running && !wasRunning) {
-                    this.startLocalTimer();
-                } else if (!updates.timer_running && wasRunning) {
-                    this.stopLocalTimer();
-                }
-
-                this.notify('synced', this.state);
-                logger.debug('Game state updated from server');
-            }
+        if (serverTime >= localTime || Number.isNaN(localTime)) {
+            this.applyServerState({
+                ...this.state,
+                ...updates
+            }, 'synced');
+            logger.debug('Game state updated from server');
         }
     }
 
@@ -446,7 +524,8 @@ class GameStateStore {
         this.stopLocalTimer();
         this.state = null;
         this.initialized = false;
-        this.subscribers.clear();
+        this.lastServerSync = 0;
+        this.notify('reset', null);
         logger.info('Game state store reset');
     }
 
@@ -455,6 +534,7 @@ class GameStateStore {
      */
     destroy() {
         this.stopLocalTimer();
+        this.state = null;
         this.subscribers.clear();
     }
 }

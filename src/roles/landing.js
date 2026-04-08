@@ -7,6 +7,7 @@
 
 import { sessionStore } from '../stores/session.js';
 import { database } from '../services/database.js';
+import { syncService } from '../services/sync.js';
 import { ensureBrowserIdentity, getRuntimeConfigStatus } from '../services/supabase.js';
 import { createLogger } from '../utils/logger.js';
 import { showToast } from '../components/ui/Toast.js';
@@ -318,6 +319,10 @@ export class LandingController {
                 // Game state might not exist yet for new sessions
             }
 
+            await syncService.initialize(session.id, {
+                participantId: participant.id
+            });
+
             showToast({ message: 'Joined session successfully!', type: 'success' });
             logger.info('Joined session:', session.id, 'as', this.selectedRole);
 
@@ -457,6 +462,10 @@ export class LandingController {
         } catch (error) {
             logger.warn('Failed to preload White Cell game state:', error);
         }
+
+        await syncService.initialize(session.id, {
+            participantId: participant.id
+        });
 
         showToast({ message: 'Operator access granted.', type: 'success' });
         this.redirectToRole(whiteCellRole);

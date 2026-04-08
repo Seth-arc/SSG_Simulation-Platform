@@ -56,6 +56,9 @@ class ParticipantsStore {
 
         /** @type {number|null} */
         this.cleanupInterval = null;
+
+        /** @type {Function|null} */
+        this.pagehideHandler = null;
     }
 
     /**
@@ -79,7 +82,7 @@ class ParticipantsStore {
             this.initialized = true;
 
             // Start heartbeat if we have a current participant
-            if (participantId) {
+            if (this.currentParticipantId) {
                 this.startHeartbeat();
             }
 
@@ -350,8 +353,10 @@ class ParticipantsStore {
             clearInterval(this.heartbeatInterval);
         }
 
+        this.bindPagehideKeepalive();
+
         // Send initial heartbeat
-        this.sendHeartbeat();
+        void this.sendHeartbeat();
 
         // Set up interval
         this.heartbeatInterval = setInterval(() => {
@@ -370,7 +375,38 @@ class ParticipantsStore {
             clearInterval(this.heartbeatInterval);
             this.heartbeatInterval = null;
         }
+
+        this.unbindPagehideKeepalive();
         logger.info('Heartbeat stopped');
+    }
+
+    /**
+     * Register a keepalive disconnect when the page is hidden
+     * @private
+     */
+    bindPagehideKeepalive() {
+        if (typeof window === 'undefined' || this.pagehideHandler || !this.sessionId || !this.currentParticipantId) {
+            return;
+        }
+
+        this.pagehideHandler = () => {
+            void database.disconnectParticipantKeepalive(this.sessionId, this.currentParticipantId);
+        };
+
+        window.addEventListener('pagehide', this.pagehideHandler);
+    }
+
+    /**
+     * Remove the keepalive disconnect handler
+     * @private
+     */
+    unbindPagehideKeepalive() {
+        if (typeof window === 'undefined' || !this.pagehideHandler) {
+            return;
+        }
+
+        window.removeEventListener('pagehide', this.pagehideHandler);
+        this.pagehideHandler = null;
     }
 
     /**
@@ -504,7 +540,7 @@ class ParticipantsStore {
         this.initialized = false;
         this.sessionId = null;
         this.currentParticipantId = null;
-        this.subscribers.clear();
+        this.notify('reset', []);
         logger.info('Participants store reset');
     }
 
@@ -512,8 +548,9 @@ class ParticipantsStore {
      * Cleanup on destroy
      */
     destroy() {
-        this.leave();
+        void this.leave();
         this.reset();
+        this.subscribers.clear();
     }
 }
 

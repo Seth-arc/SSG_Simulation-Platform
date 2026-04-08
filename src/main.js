@@ -6,22 +6,18 @@
  */
 
 import { sessionStore } from './stores/session.js';
-import { database } from './services/database.js';
+import { gameStateStore } from './stores/gameState.js';
+import { participantsStore } from './stores/participants.js';
+import { syncService } from './services/sync.js';
 import { getRuntimeConfigStatus, renderMissingBackendNotice } from './services/supabase.js';
 import { createLogger } from './utils/logger.js';
 import { showToast } from './components/ui/Toast.js';
 import { hideLoader } from './components/ui/Loader.js';
 import { ConfigurationError } from './core/errors.js';
-import { CONFIG } from './core/config.js';
-import { buildAppPath, isLandingPage, navigateToApp } from './core/navigation.js';
+import { isLandingPage, navigateToApp } from './core/navigation.js';
 
 const logger = createLogger('Main');
 const runtimeConfigStatus = getRuntimeConfigStatus();
-
-// Heartbeat interval reference
-let heartbeatInterval = null;
-let disconnectKeepaliveHandler = null;
-let suppressDisconnectKeepalive = false;
 
 /**
  * Initialize the application
@@ -53,9 +49,7 @@ async function initApp() {
 
     // Initialize session from storage
     initializeSession();
-
-    // Start heartbeat for participant presence (if in a session)
-    await startHeartbeat();
+    setupSyncLifecycle();
 
     // Hide any loading overlay
     hideLoader();
@@ -126,20 +120,13 @@ function setupLogoutHandler() {
     if (!logoutBtn) return;
 
     logoutBtn.addEventListener('click', async () => {
-        // Stop heartbeat
-        stopHeartbeat();
-
-        // Mark participant as inactive
-        const sessionId = sessionStore.getSessionId();
-        const participantId = sessionStore.getSessionParticipantId?.() || sessionStore.getSessionData()?.participantId;
-        if (sessionId && participantId) {
-            try {
-                suppressDisconnectKeepalive = true;
-                await database.disconnectParticipant(sessionId, participantId);
-            } catch (err) {
-                logger.error('Failed to disconnect participant:', err);
-            }
+        try {
+            await participantsStore.leave();
+        } catch (err) {
+            logger.error('Failed to disconnect participant:', err);
         }
+
+        await syncService.reset();
 
         // Clear session data
         sessionStore.clear();
@@ -147,74 +134,6 @@ function setupLogoutHandler() {
         // Redirect to home
         navigateToApp('');
     });
-}
-
-/**
- * Start heartbeat to maintain participant presence
- */
-async function startHeartbeat() {
-    const sessionId = sessionStore.getSessionId();
-    const sessionData = sessionStore.getSessionData();
-    const participantId = sessionStore.getSessionParticipantId?.() || sessionData?.participantId;
-
-    // Only start heartbeat if we have a valid session and are not on landing page
-    if (!sessionId || !participantId) {
-        logger.debug('No active session, skipping heartbeat');
-        return;
-    }
-
-    // Don't start heartbeat on landing page
-    if (isLandingPage()) {
-        return;
-    }
-
-    logger.info('Starting participant heartbeat');
-
-    // Send initial heartbeat immediately
-    try {
-        await database.updateHeartbeat(sessionId, participantId);
-        logger.debug('Initial heartbeat sent');
-    } catch (err) {
-        logger.error('Initial heartbeat failed:', err);
-    }
-
-    // Set up interval for regular heartbeats (every 30 seconds)
-    heartbeatInterval = setInterval(async () => {
-        try {
-            await database.updateHeartbeat(sessionId, participantId);
-            logger.debug('Heartbeat sent');
-        } catch (err) {
-            logger.error('Heartbeat failed:', err);
-        }
-    }, CONFIG.HEARTBEAT_INTERVAL_MS);
-
-    if (disconnectKeepaliveHandler) {
-        window.removeEventListener('pagehide', disconnectKeepaliveHandler);
-    }
-
-    disconnectKeepaliveHandler = () => {
-        if (!suppressDisconnectKeepalive) {
-            void database.disconnectParticipantKeepalive(sessionId, participantId);
-        }
-    };
-
-    window.addEventListener('pagehide', disconnectKeepaliveHandler);
-}
-
-/**
- * Stop the heartbeat interval
- */
-function stopHeartbeat() {
-    if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-        logger.info('Heartbeat stopped');
-    }
-
-    if (disconnectKeepaliveHandler) {
-        window.removeEventListener('pagehide', disconnectKeepaliveHandler);
-        disconnectKeepaliveHandler = null;
-    }
 }
 
 /**
@@ -311,11 +230,56 @@ function initializeSession() {
             sessionNameEl.textContent = sessionId ? `Session: ${sessionId.slice(0, 8)}...` : 'No session';
         }
 
-        updateGameStateDisplay(sessionData?.gameState);
+        if (!gameStateStore.getState()) {
+            updateGameStateDisplay(sessionData?.gameState);
+        }
     }
 
     sessionStore.subscribe((snapshot) => {
         syncSessionUi(snapshot);
+    });
+
+    gameStateStore.subscribe((_event, state) => {
+        updateGameStateDisplay(state);
+    });
+}
+
+/**
+ * Initialize live sync once a joined session is available
+ */
+function setupSyncLifecycle() {
+    let currentSyncSessionId = null;
+
+    sessionStore.subscribe((snapshot) => {
+        const participantId = snapshot.sessionData?.participantSessionId
+            || snapshot.sessionData?.participantId
+            || null;
+        const shouldInitialize = Boolean(
+            snapshot.sessionId
+            && !isLandingPage()
+            && (participantId || snapshot.role === 'white')
+        );
+
+        if (!shouldInitialize) {
+            if (currentSyncSessionId) {
+                currentSyncSessionId = null;
+                void syncService.reset();
+            }
+            return;
+        }
+
+        if (currentSyncSessionId === snapshot.sessionId && syncService.isSynced()) {
+            return;
+        }
+
+        currentSyncSessionId = snapshot.sessionId;
+        void syncService.initialize(snapshot.sessionId, { participantId }).catch((error) => {
+            logger.error('Failed to initialize live sync:', error);
+            showToast({
+                message: 'Live session sync failed to start.',
+                type: 'error'
+            });
+        });
     });
 }
 

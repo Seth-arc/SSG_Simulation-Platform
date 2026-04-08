@@ -4,10 +4,16 @@
  */
 
 import { sessionStore } from '../stores/session.js';
+import { gameStateStore } from '../stores/gameState.js';
+import { actionsStore } from '../stores/actions.js';
+import { requestsStore } from '../stores/requests.js';
+import { timelineStore } from '../stores/timeline.js';
+import { communicationsStore } from '../stores/communications.js';
 import { database } from '../services/database.js';
+import { syncService } from '../services/sync.js';
 import { createLogger } from '../utils/logger.js';
 import { showToast } from '../components/ui/Toast.js';
-import { showLoader, hideLoader, showInlineLoader } from '../components/ui/Loader.js';
+import { showLoader, hideLoader } from '../components/ui/Loader.js';
 import { showModal, confirmModal } from '../components/ui/Modal.js';
 import {
     createBadge,
@@ -73,7 +79,7 @@ export class FacilitatorController {
         this.rfis = [];
         this.responses = [];
         this.timelineEvents = [];
-        this.refreshInterval = null;
+        this.storeUnsubscribers = [];
         this.role = sessionStore.getRole();
         this.isReadOnly = false;
         this.teamContext = resolveTeamContext();
@@ -121,10 +127,16 @@ export class FacilitatorController {
 
         this.isReadOnly = accessState.readOnly;
 
+        await syncService.initialize(sessionId, {
+            participantId: sessionStore.getSessionParticipantId?.() || null
+        });
         this.configureAccessMode();
         this.bindEventListeners();
-        await this.loadInitialData();
-        this.startAutoRefresh();
+        this.subscribeToLiveData();
+        this.syncActionsFromStore();
+        this.syncRfisFromStore();
+        this.syncResponsesFromStores();
+        this.syncTimelineFromStore();
 
         logger.info('Facilitator interface initialized');
     }
@@ -213,45 +225,98 @@ export class FacilitatorController {
     }
 
     getCurrentGameState() {
-        return sessionStore.getSessionData()?.gameState || {
+        return gameStateStore.getState() || sessionStore.getSessionData()?.gameState || {
             move: 1,
             phase: 1
         };
     }
 
-    async loadInitialData() {
-        try {
-            await Promise.all([
-                this.loadActions(),
-                this.loadRfis(),
-                this.loadResponses(),
-                this.loadTimeline()
-            ]);
-        } catch (err) {
-            logger.error('Failed to load initial data:', err);
+    subscribeToLiveData() {
+        this.storeUnsubscribers.push(
+            actionsStore.subscribe(() => {
+                this.syncActionsFromStore();
+            })
+        );
+
+        this.storeUnsubscribers.push(
+            requestsStore.subscribe(() => {
+                this.syncRfisFromStore();
+                this.syncResponsesFromStores();
+            })
+        );
+
+        this.storeUnsubscribers.push(
+            communicationsStore.subscribe(() => {
+                this.syncResponsesFromStores();
+            })
+        );
+
+        this.storeUnsubscribers.push(
+            timelineStore.subscribe(() => {
+                this.syncTimelineFromStore();
+            })
+        );
+    }
+
+    syncActionsFromStore() {
+        this.actions = actionsStore.getByTeam(this.teamId);
+        this.renderActionsList();
+
+        const badge = document.getElementById('actionsBadge');
+        if (badge) {
+            badge.textContent = this.actions.length.toString();
         }
     }
 
-    async loadActions() {
-        const sessionId = sessionStore.getSessionId();
-        const actionsList = document.getElementById('actionsList');
-        if (!actionsList || !sessionId) return;
+    syncRfisFromStore() {
+        this.rfis = requestsStore.getByTeam(this.teamId);
+        this.renderRfiList();
 
-        const loader = showInlineLoader(actionsList, { message: 'Loading actions...', replace: false });
-
-        try {
-            this.actions = await database.fetchActions(sessionId, { team: this.teamId });
-            this.renderActionsList();
-
-            const badge = document.getElementById('actionsBadge');
-            if (badge) {
-                badge.textContent = this.actions.length.toString();
-            }
-        } catch (err) {
-            logger.error('Failed to load actions:', err);
-        } finally {
-            loader?.hide();
+        const badge = document.getElementById('rfiBadge');
+        if (badge) {
+            badge.textContent = this.rfis.filter((request) => request.status === 'pending').length.toString();
         }
+    }
+
+    syncResponsesFromStores() {
+        const answeredRfis = requestsStore.getByTeam(this.teamId)
+            .filter((request) => request.status === 'answered' && request.response)
+            .map((request) => ({
+                id: request.id,
+                kind: 'rfi',
+                created_at: request.responded_at || request.updated_at || request.created_at,
+                title: request.query || request.question || 'RFI response',
+                content: request.response,
+                status: request.status,
+                priority: request.priority
+            }));
+
+        const directResponses = communicationsStore.getAll()
+            .filter((communication) =>
+                communication.from_role === 'white_cell'
+                && this.responseTargets.has(communication.to_role)
+            )
+            .map((communication) => ({
+                id: communication.id,
+                kind: 'communication',
+                created_at: communication.created_at,
+                title: this.formatCommunicationTarget(communication.to_role),
+                content: communication.content,
+                type: communication.type || 'MESSAGE'
+            }));
+
+        this.responses = [...answeredRfis, ...directResponses].sort(
+            (a, b) => new Date(b.created_at) - new Date(a.created_at)
+        );
+
+        this.renderResponsesList();
+    }
+
+    syncTimelineFromStore() {
+        this.timelineEvents = timelineStore.getAll()
+            .filter((event) => [this.teamId, 'white_cell'].includes(event.team))
+            .slice(0, 50);
+        this.renderTimeline();
     }
 
     renderActionsList() {
@@ -610,8 +675,9 @@ export class FacilitatorController {
                 move: gameState.move ?? 1,
                 phase: gameState.phase ?? 1
             });
+            actionsStore.updateFromServer('INSERT', action);
 
-            await database.createTimelineEvent({
+            const timelineEvent = await database.createTimelineEvent({
                 session_id: sessionId,
                 type: 'ACTION_CREATED',
                 content: `Draft action created: ${action.goal || 'Untitled action'}`,
@@ -620,13 +686,10 @@ export class FacilitatorController {
                 move: action.move ?? 1,
                 phase: action.phase ?? 1
             });
+            timelineStore.updateFromServer('INSERT', timelineEvent);
 
             showToast({ message: 'Draft action saved', type: 'success' });
             modal?.close();
-            await Promise.all([
-                this.loadActions(),
-                this.loadTimeline()
-            ]);
         } catch (err) {
             logger.error('Failed to create action:', err);
             showToast({ message: err.message || 'Failed to save draft action', type: 'error' });
@@ -644,10 +707,10 @@ export class FacilitatorController {
         const loader = showLoader({ message: 'Updating draft...' });
 
         try {
-            await database.updateDraftAction(actionId, formData);
+            const updatedAction = await database.updateDraftAction(actionId, formData);
+            actionsStore.updateFromServer('UPDATE', updatedAction);
             showToast({ message: 'Draft action updated', type: 'success' });
             modal?.close();
-            await this.loadActions();
         } catch (err) {
             logger.error('Failed to update action:', err);
             showToast({ message: err.message || 'Failed to update draft action', type: 'error' });
@@ -679,8 +742,9 @@ export class FacilitatorController {
 
         try {
             const action = await database.submitAction(actionId);
+            actionsStore.updateFromServer('UPDATE', action);
 
-            await database.createTimelineEvent({
+            const timelineEvent = await database.createTimelineEvent({
                 session_id: action.session_id,
                 type: 'ACTION_SUBMITTED',
                 content: `Action submitted to White Cell: ${action.goal || 'Untitled action'}`,
@@ -689,12 +753,9 @@ export class FacilitatorController {
                 move: action.move ?? 1,
                 phase: action.phase ?? 1
             });
+            timelineStore.updateFromServer('INSERT', timelineEvent);
 
             showToast({ message: 'Action submitted to White Cell', type: 'success' });
-            await Promise.all([
-                this.loadActions(),
-                this.loadTimeline()
-            ]);
         } catch (err) {
             logger.error('Failed to submit action:', err);
             showToast({ message: err.message || 'Failed to submit action', type: 'error' });
@@ -726,36 +787,13 @@ export class FacilitatorController {
 
         try {
             await database.deleteDraftAction(actionId);
+            actionsStore.updateFromServer('DELETE', { id: actionId });
             showToast({ message: 'Draft action deleted', type: 'success' });
-            await this.loadActions();
         } catch (err) {
             logger.error('Failed to delete action:', err);
             showToast({ message: err.message || 'Failed to delete draft action', type: 'error' });
         } finally {
             hideLoader();
-        }
-    }
-
-    async loadRfis() {
-        const sessionId = sessionStore.getSessionId();
-        const rfiList = document.getElementById('rfiList');
-        if (!rfiList || !sessionId) return;
-
-        const loader = showInlineLoader(rfiList, { message: 'Loading RFIs...', replace: false });
-
-        try {
-            const data = await database.fetchRequests(sessionId, { team: this.teamId });
-            this.rfis = data || [];
-            this.renderRfiList();
-
-            const badge = document.getElementById('rfiBadge');
-            if (badge) {
-                badge.textContent = this.rfis.filter((request) => request.status === 'pending').length.toString();
-            }
-        } catch (err) {
-            logger.error('Failed to load RFIs:', err);
-        } finally {
-            loader?.hide();
         }
     }
 
@@ -911,8 +949,9 @@ export class FacilitatorController {
                 move: gameState.move ?? 1,
                 phase: gameState.phase ?? 1
             });
+            requestsStore.updateFromServer('INSERT', rfi);
 
-            await database.createTimelineEvent({
+            const timelineEvent = await database.createTimelineEvent({
                 session_id: sessionId,
                 type: 'RFI_CREATED',
                 content: `${this.teamLabel} submitted an RFI to White Cell.`,
@@ -921,70 +960,15 @@ export class FacilitatorController {
                 move: rfi.move ?? 1,
                 phase: rfi.phase ?? 1
             });
+            timelineStore.updateFromServer('INSERT', timelineEvent);
 
             showToast({ message: 'RFI submitted successfully', type: 'success' });
             modal?.close();
-            await Promise.all([
-                this.loadRfis(),
-                this.loadResponses(),
-                this.loadTimeline()
-            ]);
         } catch (err) {
             logger.error('Failed to submit RFI:', err);
             showToast({ message: err.message || 'Failed to submit RFI', type: 'error' });
         } finally {
             hideLoader();
-        }
-    }
-
-    async loadResponses() {
-        const sessionId = sessionStore.getSessionId();
-        const responsesList = document.getElementById('responsesList');
-        if (!responsesList || !sessionId) return;
-
-        const loader = showInlineLoader(responsesList, { message: 'Loading responses...', replace: false });
-
-        try {
-            const [requests, communications] = await Promise.all([
-                database.fetchRequests(sessionId),
-                database.fetchCommunications(sessionId)
-            ]);
-
-            const answeredRfis = (requests || [])
-                .filter((request) => request.team === this.teamId && request.status === 'answered' && request.response)
-                .map((request) => ({
-                    id: request.id,
-                    kind: 'rfi',
-                    created_at: request.responded_at || request.updated_at || request.created_at,
-                    title: request.query || request.question || 'RFI response',
-                    content: request.response,
-                    status: request.status,
-                    priority: request.priority
-                }));
-
-            const directResponses = (communications || [])
-                .filter((communication) =>
-                    communication.from_role === 'white_cell' &&
-                    this.responseTargets.has(communication.to_role)
-                )
-                .map((communication) => ({
-                    id: communication.id,
-                    kind: 'communication',
-                    created_at: communication.created_at,
-                    title: this.formatCommunicationTarget(communication.to_role),
-                    content: communication.content,
-                    type: communication.type || 'MESSAGE'
-                }));
-
-            this.responses = [...answeredRfis, ...directResponses].sort(
-                (a, b) => new Date(b.created_at) - new Date(a.created_at)
-            );
-
-            this.renderResponsesList();
-        } catch (err) {
-            logger.error('Failed to load responses:', err);
-        } finally {
-            loader?.hide();
         }
     }
 
@@ -1020,24 +1004,6 @@ export class FacilitatorController {
                 </div>
             `;
         }).join('');
-    }
-
-    async loadTimeline() {
-        const sessionId = sessionStore.getSessionId();
-        const container = document.getElementById('timelineList');
-        if (!container || !sessionId) return;
-
-        const loader = showInlineLoader(container, { message: 'Loading timeline...', replace: false });
-
-        try {
-            const data = await database.fetchTimeline(sessionId, { limit: 50 });
-            this.timelineEvents = (data || []).filter((event) => [this.teamId, 'white_cell'].includes(event.team));
-            this.renderTimeline();
-        } catch (err) {
-            logger.error('Failed to load timeline:', err);
-        } finally {
-            loader?.hide();
-        }
     }
 
     renderTimeline() {
@@ -1089,7 +1055,7 @@ export class FacilitatorController {
 
         try {
             const gameState = this.getCurrentGameState();
-            await database.createTimelineEvent({
+            const timelineEvent = await database.createTimelineEvent({
                 session_id: sessionId,
                 type,
                 content,
@@ -1097,12 +1063,12 @@ export class FacilitatorController {
                 move: gameState.move ?? 1,
                 phase: gameState.phase ?? 1
             });
+            timelineStore.updateFromServer('INSERT', timelineEvent);
 
             showToast({ message: 'Observation saved', type: 'success' });
             if (contentInput) {
                 contentInput.value = '';
             }
-            await this.loadTimeline();
         } catch (err) {
             logger.error('Failed to save capture:', err);
             showToast({ message: 'Failed to save observation', type: 'error' });
@@ -1133,26 +1099,6 @@ export class FacilitatorController {
         return team || '';
     }
 
-    startAutoRefresh() {
-        this.refreshInterval = setInterval(() => {
-            Promise.all([
-                this.loadActions(),
-                this.loadRfis(),
-                this.loadResponses(),
-                this.loadTimeline()
-            ]).catch((err) => {
-                logger.error('Facilitator auto-refresh failed:', err);
-            });
-        }, 30000);
-    }
-
-    stopAutoRefresh() {
-        if (this.refreshInterval) {
-            clearInterval(this.refreshInterval);
-            this.refreshInterval = null;
-        }
-    }
-
     escapeHtml(value) {
         if (typeof value !== 'string') return '';
         const div = document.createElement('div');
@@ -1161,7 +1107,8 @@ export class FacilitatorController {
     }
 
     destroy() {
-        this.stopAutoRefresh();
+        this.storeUnsubscribers.forEach((unsubscribe) => unsubscribe?.());
+        this.storeUnsubscribers = [];
     }
 }
 

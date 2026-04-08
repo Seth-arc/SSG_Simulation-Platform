@@ -4,10 +4,16 @@
  */
 
 import { sessionStore } from '../stores/session.js';
+import { gameStateStore } from '../stores/gameState.js';
+import { actionsStore } from '../stores/actions.js';
+import { requestsStore } from '../stores/requests.js';
+import { timelineStore } from '../stores/timeline.js';
+import { communicationsStore } from '../stores/communications.js';
 import { database } from '../services/database.js';
+import { syncService } from '../services/sync.js';
 import { createLogger } from '../utils/logger.js';
 import { showToast } from '../components/ui/Toast.js';
-import { showLoader, hideLoader, showInlineLoader } from '../components/ui/Loader.js';
+import { showLoader, hideLoader } from '../components/ui/Loader.js';
 import { showModal, confirmModal } from '../components/ui/Modal.js';
 import { createBadge, createStatusBadge, createPriorityBadge } from '../components/ui/Badge.js';
 import { formatDateTime, formatRelativeTime } from '../utils/formatting.js';
@@ -94,7 +100,7 @@ export class WhiteCellController {
         this.actions = [];
         this.rfis = [];
         this.communications = [];
-        this.timerInterval = null;
+        this.storeUnsubscribers = [];
         this.currentTimerSeconds = CONFIG.DEFAULT_TIMER_SECONDS;
         this.timerRunning = false;
         this.teamContext = resolveTeamContext();
@@ -142,9 +148,17 @@ export class WhiteCellController {
         this.operatorRole = accessState.operatorRole || WHITE_CELL_OPERATOR_ROLES.LEAD;
         const sessionId = accessState.sessionId;
 
+        await syncService.initialize(sessionId, {
+            participantId: sessionStore.getSessionParticipantId?.() || null
+        });
         this.configureTeamLabels();
         this.bindEventListeners();
-        await this.loadInitialData();
+        this.subscribeToLiveData();
+        this.syncGameStateFromStore(gameStateStore.getState() || sessionStore.getSessionData()?.gameState || null);
+        this.syncActionsFromStore();
+        this.syncRfisFromStore();
+        this.syncCommunicationsFromStore();
+        this.syncTimelineFromStore();
         this.updateTimerDisplay();
         this.updateTimerStatusDisplay();
 
@@ -206,22 +220,40 @@ export class WhiteCellController {
         commForm?.addEventListener('submit', (event) => this.handleCommunicationSubmit(event));
     }
 
-    async loadInitialData() {
-        try {
-            await Promise.all([
-                this.loadGameState(),
-                this.loadActions(),
-                this.loadRfis(),
-                this.loadCommunications(),
-                this.loadTimeline()
-            ]);
-        } catch (err) {
-            logger.error('Failed to load initial data:', err);
-        }
+    subscribeToLiveData() {
+        this.storeUnsubscribers.push(
+            gameStateStore.subscribe((_event, state) => {
+                this.syncGameStateFromStore(state);
+            })
+        );
+
+        this.storeUnsubscribers.push(
+            actionsStore.subscribe(() => {
+                this.syncActionsFromStore();
+            })
+        );
+
+        this.storeUnsubscribers.push(
+            requestsStore.subscribe(() => {
+                this.syncRfisFromStore();
+            })
+        );
+
+        this.storeUnsubscribers.push(
+            communicationsStore.subscribe(() => {
+                this.syncCommunicationsFromStore();
+            })
+        );
+
+        this.storeUnsubscribers.push(
+            timelineStore.subscribe(() => {
+                this.syncTimelineFromStore();
+            })
+        );
     }
 
     getCurrentGameState() {
-        return sessionStore.getSessionData()?.gameState || {
+        return gameStateStore.getState() || sessionStore.getSessionData()?.gameState || {
             move: 1,
             phase: 1,
             timer_seconds: this.currentTimerSeconds,
@@ -229,57 +261,17 @@ export class WhiteCellController {
         };
     }
 
-    syncSessionGameState(gameStateUpdates = {}) {
-        sessionStore.setGameState(gameStateUpdates);
-    }
-
-    async loadGameState() {
-        const sessionId = sessionStore.getSessionId();
-        if (!sessionId) return;
-
-        try {
-            const data = await database.getGameState(sessionId);
-            if (!data) return;
-
-            this.currentTimerSeconds = this.getEffectiveTimerSeconds(data);
-            this.timerRunning = Boolean(data.timer_running && this.currentTimerSeconds > 0);
-
-            this.syncSessionGameState({
-                ...data,
-                timer_seconds: this.currentTimerSeconds,
-                timer_running: this.timerRunning
-            });
-
-            this.updateGameStateDisplay({
-                ...data,
-                timer_seconds: this.currentTimerSeconds,
-                timer_running: this.timerRunning
-            });
-            this.updateTimerDisplay();
-            this.updateTimerStatusDisplay();
-
-            if (this.timerRunning) {
-                this.startTimerInterval();
-            }
-        } catch (err) {
-            logger.error('Failed to load game state:', err);
-        }
-    }
-
-    getEffectiveTimerSeconds(gameState) {
-        const storedSeconds = gameState?.timer_seconds ?? CONFIG.DEFAULT_TIMER_SECONDS;
-
-        if (!gameState?.timer_running || !gameState?.timer_last_update) {
-            return storedSeconds;
-        }
-
-        const lastUpdate = new Date(gameState.timer_last_update).getTime();
-        if (Number.isNaN(lastUpdate)) {
-            return storedSeconds;
-        }
-
-        const elapsedSeconds = Math.max(0, Math.floor((Date.now() - lastUpdate) / 1000));
-        return Math.max(0, storedSeconds - elapsedSeconds);
+    syncGameStateFromStore(gameState) {
+        const safeGameState = gameState || {};
+        this.currentTimerSeconds = gameState?.timer_seconds ?? CONFIG.DEFAULT_TIMER_SECONDS;
+        this.timerRunning = Boolean(gameState?.timer_running && this.currentTimerSeconds > 0);
+        this.updateGameStateDisplay({
+            ...safeGameState,
+            timer_seconds: this.currentTimerSeconds,
+            timer_running: this.timerRunning
+        });
+        this.updateTimerDisplay();
+        this.updateTimerStatusDisplay();
     }
 
     updateTimerDisplay() {
@@ -353,63 +345,14 @@ export class WhiteCellController {
     async startTimer() {
         if (this.timerRunning) return;
 
-        this.timerRunning = true;
-        this.updateTimerStatusDisplay();
-        this.startTimerInterval();
-        this.syncSessionGameState({
-            timer_seconds: this.currentTimerSeconds,
-            timer_running: true
-        });
-        await this.saveTimerState();
+        await gameStateStore.startTimer();
 
         showToast({ message: 'Timer started', type: 'success' });
         logger.info('Timer started');
     }
 
-    startTimerInterval() {
-        if (this.timerInterval) {
-            clearInterval(this.timerInterval);
-        }
-
-        this.updateTimerStatusDisplay();
-
-        this.timerInterval = setInterval(() => {
-            if (this.currentTimerSeconds > 0) {
-                this.currentTimerSeconds -= 1;
-                this.updateTimerDisplay();
-                this.syncSessionGameState({
-                    timer_seconds: this.currentTimerSeconds,
-                    timer_running: this.timerRunning
-                });
-
-                if (this.currentTimerSeconds % 30 === 0) {
-                    this.saveTimerState();
-                }
-
-                return;
-            }
-
-            this.pauseTimer({ silent: true }).catch((err) => {
-                logger.error('Failed to stop timer at zero:', err);
-            });
-            showToast({ message: 'Timer finished!', type: 'warning' });
-        }, 1000);
-    }
-
     async pauseTimer({ silent = false } = {}) {
-        this.timerRunning = false;
-
-        if (this.timerInterval) {
-            clearInterval(this.timerInterval);
-            this.timerInterval = null;
-        }
-
-        this.updateTimerStatusDisplay();
-        this.syncSessionGameState({
-            timer_seconds: this.currentTimerSeconds,
-            timer_running: false
-        });
-        await this.saveTimerState();
+        await gameStateStore.pauseTimer();
 
         if (!silent) {
             showToast({ message: 'Timer paused', type: 'info' });
@@ -428,41 +371,9 @@ export class WhiteCellController {
 
         if (!confirmed) return;
 
-        await this.pauseTimer({ silent: true });
-        this.currentTimerSeconds = CONFIG.DEFAULT_TIMER_SECONDS;
-        this.updateTimerDisplay();
-        this.updateTimerStatusDisplay();
-        this.syncSessionGameState({
-            timer_seconds: this.currentTimerSeconds,
-            timer_running: false
-        });
-        await this.saveTimerState();
+        await gameStateStore.resetTimer(CONFIG.DEFAULT_TIMER_SECONDS);
 
         showToast({ message: 'Timer reset', type: 'success' });
-    }
-
-    async saveTimerState() {
-        const sessionId = sessionStore.getSessionId();
-        if (!sessionId) return null;
-
-        try {
-            const updatedState = await database.updateGameState(sessionId, {
-                timer_seconds: this.currentTimerSeconds,
-                timer_running: this.timerRunning,
-                timer_last_update: new Date().toISOString()
-            });
-
-            if (updatedState) {
-                this.currentTimerSeconds = updatedState.timer_seconds ?? this.currentTimerSeconds;
-                this.timerRunning = updatedState.timer_running ?? this.timerRunning;
-                this.syncSessionGameState(updatedState);
-            }
-
-            return updatedState;
-        } catch (err) {
-            logger.error('Failed to save timer state:', err);
-            return null;
-        }
     }
 
     async advancePhase() {
@@ -490,11 +401,12 @@ export class WhiteCellController {
         const loader = showLoader({ message: 'Advancing phase...' });
 
         try {
-            const updatedState = await database.updateGameState(sessionId, {
-                phase: currentPhase + 1
-            });
+            const updatedState = await gameStateStore.advancePhase();
+            if (!updatedState) {
+                throw new Error('Phase advance failed');
+            }
 
-            await database.createTimelineEvent({
+            const timelineEvent = await database.createTimelineEvent({
                 session_id: sessionId,
                 type: 'PHASE_CHANGE',
                 content: `Phase advanced from ${currentPhase} to ${updatedState.phase}`,
@@ -502,10 +414,7 @@ export class WhiteCellController {
                 move: currentMove,
                 phase: updatedState.phase
             });
-
-            this.syncSessionGameState(updatedState);
-            this.updateGameStateDisplay(updatedState);
-            await this.loadTimeline();
+            timelineStore.updateFromServer('INSERT', timelineEvent);
 
             showToast({ message: `Advanced to Phase ${updatedState.phase}`, type: 'success' });
             logger.info(`Phase advanced to ${updatedState.phase}`);
@@ -542,11 +451,12 @@ export class WhiteCellController {
         const loader = showLoader({ message: 'Returning to previous phase...' });
 
         try {
-            const updatedState = await database.updateGameState(sessionId, {
-                phase: currentPhase - 1
-            });
+            const updatedState = await gameStateStore.regressPhase();
+            if (!updatedState) {
+                throw new Error('Phase regression failed');
+            }
 
-            await database.createTimelineEvent({
+            const timelineEvent = await database.createTimelineEvent({
                 session_id: sessionId,
                 type: 'PHASE_CHANGE',
                 content: `Phase moved back from ${currentPhase} to ${updatedState.phase}`,
@@ -554,10 +464,7 @@ export class WhiteCellController {
                 move: currentMove,
                 phase: updatedState.phase
             });
-
-            this.syncSessionGameState(updatedState);
-            this.updateGameStateDisplay(updatedState);
-            await this.loadTimeline();
+            timelineStore.updateFromServer('INSERT', timelineEvent);
 
             showToast({ message: `Returned to Phase ${updatedState.phase}`, type: 'success' });
             logger.info(`Phase regressed to ${updatedState.phase}`);
@@ -593,12 +500,12 @@ export class WhiteCellController {
         const loader = showLoader({ message: 'Advancing move...' });
 
         try {
-            const updatedState = await database.updateGameState(sessionId, {
-                move: currentMove + 1,
-                phase: 1
-            });
+            const updatedState = await gameStateStore.advanceMove();
+            if (!updatedState) {
+                throw new Error('Move advance failed');
+            }
 
-            await database.createTimelineEvent({
+            const timelineEvent = await database.createTimelineEvent({
                 session_id: sessionId,
                 type: 'MOVE_CHANGE',
                 content: `Move advanced from ${currentMove} to ${updatedState.move}`,
@@ -606,10 +513,7 @@ export class WhiteCellController {
                 move: updatedState.move,
                 phase: updatedState.phase
             });
-
-            this.syncSessionGameState(updatedState);
-            this.updateGameStateDisplay(updatedState);
-            await this.loadTimeline();
+            timelineStore.updateFromServer('INSERT', timelineEvent);
 
             showToast({ message: `Advanced to Move ${updatedState.move}`, type: 'success' });
             logger.info(`Move advanced to ${updatedState.move}`);
@@ -645,12 +549,12 @@ export class WhiteCellController {
         const loader = showLoader({ message: 'Returning to previous move...' });
 
         try {
-            const updatedState = await database.updateGameState(sessionId, {
-                move: currentMove - 1,
-                phase: 1
-            });
+            const updatedState = await gameStateStore.regressMove();
+            if (!updatedState) {
+                throw new Error('Move regression failed');
+            }
 
-            await database.createTimelineEvent({
+            const timelineEvent = await database.createTimelineEvent({
                 session_id: sessionId,
                 type: 'MOVE_CHANGE',
                 content: `Move returned from ${currentMove} to ${updatedState.move}`,
@@ -658,10 +562,7 @@ export class WhiteCellController {
                 move: updatedState.move,
                 phase: updatedState.phase
             });
-
-            this.syncSessionGameState(updatedState);
-            this.updateGameStateDisplay(updatedState);
-            await this.loadTimeline();
+            timelineStore.updateFromServer('INSERT', timelineEvent);
 
             showToast({ message: `Returned to Move ${updatedState.move}`, type: 'success' });
             logger.info(`Move regressed to ${updatedState.move}`);
@@ -673,35 +574,16 @@ export class WhiteCellController {
         }
     }
 
-    async loadActions() {
-        const sessionId = sessionStore.getSessionId();
-        const reviewContainer = document.getElementById('actionsList');
-        const queueContainer = document.getElementById('adjudicationQueue');
+    syncActionsFromStore() {
+        this.actions = actionsStore.getByTeam(this.teamId)
+            .filter((action) => action.status === ENUMS.ACTION_STATUS.SUBMITTED);
 
-        if (!sessionId || (!reviewContainer && !queueContainer)) return;
+        this.renderActionReview();
+        this.renderAdjudicationQueue();
 
-        const loader = reviewContainer
-            ? showInlineLoader(reviewContainer, { message: 'Loading actions...', replace: false })
-            : null;
-
-        try {
-            const data = await database.fetchActions(sessionId, {
-                team: this.teamId,
-                statuses: [ENUMS.ACTION_STATUS.SUBMITTED]
-            });
-            this.actions = data || [];
-
-            this.renderActionReview();
-            this.renderAdjudicationQueue();
-
-            const badge = document.getElementById('actionsBadge');
-            if (badge) {
-                badge.textContent = this.getPendingActions().length;
-            }
-        } catch (err) {
-            logger.error('Failed to load actions:', err);
-        } finally {
-            loader?.hide();
+        const badge = document.getElementById('actionsBadge');
+        if (badge) {
+            badge.textContent = this.getPendingActions().length;
         }
     }
 
@@ -895,14 +777,15 @@ export class WhiteCellController {
         const loader = showLoader({ message: 'Submitting adjudication...' });
 
         try {
-            await database.adjudicateAction(actionId, {
+            const updatedAction = await database.adjudicateAction(actionId, {
                 outcome,
                 adjudication_notes: notes || null,
                 adjudicated_at: new Date().toISOString()
             });
+            actionsStore.updateFromServer('UPDATE', updatedAction);
 
             const gameState = this.getCurrentGameState();
-            await database.createTimelineEvent({
+            const timelineEvent = await database.createTimelineEvent({
                 session_id: sessionStore.getSessionId(),
                 type: 'ACTION_ADJUDICATED',
                 content: `Action adjudicated: ${outcome}`,
@@ -911,13 +794,10 @@ export class WhiteCellController {
                 move: gameState.move ?? 1,
                 phase: gameState.phase ?? 1
             });
+            timelineStore.updateFromServer('INSERT', timelineEvent);
 
             showToast({ message: 'Adjudication submitted', type: 'success' });
             modal?.close();
-            await Promise.all([
-                this.loadActions(),
-                this.loadTimeline()
-            ]);
         } catch (err) {
             logger.error('Failed to adjudicate action:', err);
             showToast({ message: 'Failed to submit adjudication', type: 'error' });
@@ -926,27 +806,15 @@ export class WhiteCellController {
         }
     }
 
-    async loadRfis() {
-        const sessionId = sessionStore.getSessionId();
-        const container = document.getElementById('rfiQueue');
-        if (!container || !sessionId) return;
+    syncRfisFromStore() {
+        this.rfis = requestsStore.getByTeam(this.teamId)
+            .filter((request) => request.status === 'pending');
 
-        const loader = showInlineLoader(container, { message: 'Loading RFIs...', replace: false });
+        this.renderRfiQueue();
 
-        try {
-            const data = await database.fetchRequests(sessionId, { team: this.teamId });
-            this.rfis = (data || []).filter((request) => request.status === 'pending');
-
-            this.renderRfiQueue();
-
-            const badge = document.getElementById('rfiBadge');
-            if (badge) {
-                badge.textContent = this.rfis.length;
-            }
-        } catch (err) {
-            logger.error('Failed to load RFIs:', err);
-        } finally {
-            loader?.hide();
+        const badge = document.getElementById('rfiBadge');
+        if (badge) {
+            badge.textContent = this.rfis.length;
         }
     }
 
@@ -1045,14 +913,15 @@ export class WhiteCellController {
         const loader = showLoader({ message: 'Sending response...' });
 
         try {
-            await database.updateRequest(rfiId, {
+            const updatedRequest = await database.updateRequest(rfiId, {
                 response,
                 status: 'answered',
                 responded_at: new Date().toISOString()
             });
+            requestsStore.updateFromServer('UPDATE', updatedRequest);
 
             const gameState = this.getCurrentGameState();
-            await database.createTimelineEvent({
+            const timelineEvent = await database.createTimelineEvent({
                 session_id: sessionStore.getSessionId(),
                 type: 'RFI_ANSWERED',
                 content: 'White Cell responded to an RFI.',
@@ -1061,13 +930,10 @@ export class WhiteCellController {
                 move: gameState.move ?? 1,
                 phase: gameState.phase ?? 1
             });
+            timelineStore.updateFromServer('INSERT', timelineEvent);
 
             showToast({ message: 'Response sent', type: 'success' });
             modal?.close();
-            await Promise.all([
-                this.loadRfis(),
-                this.loadTimeline()
-            ]);
         } catch (err) {
             logger.error('Failed to respond to RFI:', err);
             showToast({ message: 'Failed to send response', type: 'error' });
@@ -1096,7 +962,7 @@ export class WhiteCellController {
 
         try {
             const gameState = this.getCurrentGameState();
-            await database.createCommunication({
+            const communication = await database.createCommunication({
                 session_id: sessionId,
                 from_role: 'white_cell',
                 to_role: recipient,
@@ -1104,8 +970,9 @@ export class WhiteCellController {
                 content,
                 metadata: {}
             });
+            communicationsStore.updateFromServer('INSERT', communication);
 
-            await database.createTimelineEvent({
+            const timelineEvent = await database.createTimelineEvent({
                 session_id: sessionId,
                 type,
                 content: `White Cell ${type.toLowerCase()} sent to ${this.formatCommunicationRecipient(recipient)}`,
@@ -1113,16 +980,13 @@ export class WhiteCellController {
                 move: gameState.move ?? 1,
                 phase: gameState.phase ?? 1
             });
+            timelineStore.updateFromServer('INSERT', timelineEvent);
 
             form.reset();
             document.getElementById('commRecipient').value = this.teamId;
             document.getElementById('commType').value = 'INJECT';
 
             showToast({ message: 'Communication sent', type: 'success' });
-            await Promise.all([
-                this.loadCommunications(),
-                this.loadTimeline()
-            ]);
         } catch (err) {
             logger.error('Failed to send communication:', err);
             showToast({ message: 'Failed to send communication', type: 'error' });
@@ -1131,30 +995,17 @@ export class WhiteCellController {
         }
     }
 
-    async loadCommunications() {
-        const sessionId = sessionStore.getSessionId();
-        const container = document.getElementById('commHistory');
-        if (!container || !sessionId) return;
-
-        const loader = showInlineLoader(container, { message: 'Loading communications...', replace: false });
-
-        try {
-            const data = await database.fetchCommunications(sessionId);
-            const allowedRecipients = new Set([
-                this.teamId,
-                this.teamContext.facilitatorRole,
-                this.teamContext.notetakerRole,
-                this.teamContext.whitecellLeadRole,
-                this.teamContext.whitecellSupportRole,
-                this.teamContext.whitecellRole
-            ]);
-            this.communications = (data || []).filter((communication) => allowedRecipients.has(communication.to_role));
-            this.renderCommunicationHistory();
-        } catch (err) {
-            logger.error('Failed to load communications:', err);
-        } finally {
-            loader?.hide();
-        }
+    syncCommunicationsFromStore() {
+        const allowedRecipients = new Set([
+            this.teamId,
+            this.teamContext.facilitatorRole,
+            this.teamContext.notetakerRole,
+            this.teamContext.whitecellLeadRole,
+            this.teamContext.whitecellSupportRole,
+            this.teamContext.whitecellRole
+        ]);
+        this.communications = communicationsStore.getByRecipients(allowedRecipients);
+        this.renderCommunicationHistory();
     }
 
     renderCommunicationHistory() {
@@ -1193,22 +1044,10 @@ export class WhiteCellController {
         return labels[recipient] || recipient || 'Unknown recipient';
     }
 
-    async loadTimeline() {
-        const sessionId = sessionStore.getSessionId();
-        const container = document.getElementById('timelineList');
-        if (!container || !sessionId) return;
-
-        const loader = showInlineLoader(container, { message: 'Loading timeline...', replace: false });
-
-        try {
-            const data = await database.fetchTimeline(sessionId);
-            const relevantEvents = (data || []).filter((event) => [this.teamId, 'white_cell'].includes(event.team));
-            this.renderTimeline(relevantEvents);
-        } catch (err) {
-            logger.error('Failed to load timeline:', err);
-        } finally {
-            loader?.hide();
-        }
+    syncTimelineFromStore() {
+        const relevantEvents = timelineStore.getAll()
+            .filter((event) => [this.teamId, 'white_cell'].includes(event.team));
+        this.renderTimeline(relevantEvents);
     }
 
     renderTimeline(events) {
@@ -1260,11 +1099,8 @@ export class WhiteCellController {
     }
 
     destroy() {
-        if (this.timerInterval) {
-            clearInterval(this.timerInterval);
-        }
-
-        this.saveTimerState();
+        this.storeUnsubscribers.forEach((unsubscribe) => unsubscribe?.());
+        this.storeUnsubscribers = [];
     }
 }
 

@@ -1,5 +1,11 @@
 import { database } from '../services/database.js';
 import { sessionStore } from '../stores/session.js';
+import { gameStateStore } from '../stores/gameState.js';
+import { actionsStore } from '../stores/actions.js';
+import { requestsStore } from '../stores/requests.js';
+import { timelineStore } from '../stores/timeline.js';
+import { participantsStore } from '../stores/participants.js';
+import { syncService } from '../services/sync.js';
 import { getRuntimeConfigStatus } from '../services/supabase.js';
 import { createLogger } from '../utils/logger.js';
 import { showToast } from '../components/ui/Toast.js';
@@ -129,8 +135,8 @@ export class GameMasterController {
     constructor() {
         this.sessions = [];
         this.currentSessionId = null;
-        this.refreshInterval = null;
         this.sessionBundles = new Map();
+        this.storeUnsubscribers = [];
     }
 
     async init() {
@@ -161,8 +167,8 @@ export class GameMasterController {
             return;
         }
         this.bindEventListeners();
+        this.subscribeToLiveStores();
         await this.loadSessions();
-        this.startAutoRefresh();
         logger.info('Game Master interface initialized');
     }
 
@@ -281,6 +287,7 @@ export class GameMasterController {
         this.renderSessionSelectors();
 
         if (!this.currentSessionId) {
+            await syncService.reset();
             this.updateHeaderSessionState(null, null);
             this.renderParticipantsPanel(null);
             this.updateExportAvailability(null);
@@ -289,17 +296,78 @@ export class GameMasterController {
 
         try {
             const bundle = await this.ensureSessionBundle(this.currentSessionId);
-            this.updateHeaderSessionState(bundle.session, bundle.gameState);
-            this.renderParticipantsPanel(bundle);
-            this.updateExportAvailability(bundle);
-
-            const sessionDetailSection = document.getElementById('sessionDetailSection');
-            if (sessionDetailSection?.style.display !== 'none') {
-                this.renderSessionDetails(bundle.session, bundle.participants, bundle.gameState, bundle.actions, bundle.requests);
-            }
+            await syncService.initialize(this.currentSessionId);
+            this.applySelectedLiveBundle(bundle);
         } catch (error) {
             logger.error('Failed to refresh selected session views:', error);
             showToast('Failed to refresh selected session views', { type: 'error' });
+        }
+    }
+
+    subscribeToLiveStores() {
+        const rerender = () => {
+            this.applySelectedLiveBundle();
+        };
+
+        this.storeUnsubscribers.push(gameStateStore.subscribe(rerender));
+        this.storeUnsubscribers.push(actionsStore.subscribe(rerender));
+        this.storeUnsubscribers.push(requestsStore.subscribe(rerender));
+        this.storeUnsubscribers.push(timelineStore.subscribe(rerender));
+        this.storeUnsubscribers.push(participantsStore.subscribe(rerender));
+    }
+
+    buildSelectedLiveBundle(baseBundle = null) {
+        if (!this.currentSessionId) {
+            return null;
+        }
+
+        const session = baseBundle?.session
+            || this.sessionBundles.get(this.currentSessionId)?.session
+            || this.sessions.find((entry) => entry.id === this.currentSessionId)
+            || null;
+
+        if (!session) {
+            return null;
+        }
+
+        return {
+            session,
+            gameState: gameStateStore.getState(),
+            participants: participantsStore.getAll(),
+            actions: actionsStore.getAll(),
+            requests: requestsStore.getAll(),
+            timeline: timelineStore.getAll()
+        };
+    }
+
+    applySelectedLiveBundle(baseBundle = null) {
+        if (!this.currentSessionId) {
+            return;
+        }
+
+        const liveBundle = this.buildSelectedLiveBundle(baseBundle);
+        if (!liveBundle) {
+            return;
+        }
+
+        this.sessionBundles.set(this.currentSessionId, liveBundle);
+        const bundles = [...this.sessionBundles.values()];
+        this.renderDashboardStats(buildDashboardModel(bundles));
+        this.renderRecentActivity(buildRecentActivityModel(bundles));
+        this.renderActiveParticipants(buildConnectedParticipantsModel(bundles));
+        this.updateHeaderSessionState(liveBundle.session, liveBundle.gameState);
+        this.renderParticipantsPanel(liveBundle);
+        this.updateExportAvailability(liveBundle);
+
+        const sessionDetailSection = document.getElementById('sessionDetailSection');
+        if (sessionDetailSection?.style.display !== 'none') {
+            this.renderSessionDetails(
+                liveBundle.session,
+                liveBundle.participants,
+                liveBundle.gameState,
+                liveBundle.actions,
+                liveBundle.requests
+            );
         }
     }
 
@@ -852,7 +920,7 @@ export class GameMasterController {
         showLoader({ message: 'Preparing export...' });
 
         try {
-            const bundle = await database.fetchSessionBundle(this.currentSessionId);
+            const bundle = this.buildSelectedLiveBundle() || await database.fetchSessionBundle(this.currentSessionId);
             this.sessionBundles.set(this.currentSessionId, bundle);
 
             const sessionName = sanitizeFilenamePart(bundle.session?.name || this.currentSessionId);
@@ -894,19 +962,6 @@ export class GameMasterController {
         }
     }
 
-    startAutoRefresh() {
-        this.refreshInterval = setInterval(() => {
-            void this.loadSessions();
-        }, 60000);
-    }
-
-    stopAutoRefresh() {
-        if (this.refreshInterval) {
-            clearInterval(this.refreshInterval);
-            this.refreshInterval = null;
-        }
-    }
-
     escapeHtml(str) {
         return String(str ?? '')
             .replace(/&/g, '&amp;')
@@ -917,7 +972,8 @@ export class GameMasterController {
     }
 
     destroy() {
-        this.stopAutoRefresh();
+        this.storeUnsubscribers.forEach((unsubscribe) => unsubscribe?.());
+        this.storeUnsubscribers = [];
     }
 }
 

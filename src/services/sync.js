@@ -16,6 +16,7 @@ import { actionsStore } from '../stores/actions.js';
 import { requestsStore } from '../stores/requests.js';
 import { timelineStore } from '../stores/timeline.js';
 import { participantsStore } from '../stores/participants.js';
+import { communicationsStore } from '../stores/communications.js';
 import { sessionStore } from '../stores/session.js';
 import { createLogger } from '../utils/logger.js';
 
@@ -57,6 +58,9 @@ class SyncService {
 
         /** @type {number} */
         this.syncDebounceTimer = null;
+
+        /** @type {Promise<void>|null} */
+        this.initializationPromise = null;
     }
 
     /**
@@ -64,7 +68,9 @@ class SyncService {
      * @param {string} sessionId - Session ID
      * @returns {Promise<void>}
      */
-    async initialize(sessionId) {
+    async initialize(sessionId, {
+        participantId = null
+    } = {}) {
         if (!sessionId) {
             logger.warn('Cannot initialize without session ID');
             return;
@@ -75,14 +81,22 @@ class SyncService {
             return;
         }
 
+        if (this.initializationPromise && this.sessionId === sessionId) {
+            return this.initializationPromise;
+        }
+
+        if ((this.initialized || this.initializationPromise) && this.sessionId && this.sessionId !== sessionId) {
+            await this.reset();
+        }
+
         this.sessionId = sessionId;
         this.setStatus(SYNC_STATUS.SYNCING);
 
         logger.info('Initializing sync service for session:', sessionId);
 
-        try {
+        this.initializationPromise = (async () => {
             // Initialize all stores
-            await this.initializeStores();
+            await this.initializeStores(participantId);
 
             // Initialize real-time service
             await realtimeService.initialize(sessionId);
@@ -98,19 +112,23 @@ class SyncService {
             this.setStatus(SYNC_STATUS.SYNCED);
 
             logger.info('Sync service initialized');
-        } catch (err) {
+        })().catch((err) => {
             logger.error('Failed to initialize sync service:', err);
             this.setStatus(SYNC_STATUS.ERROR);
             throw err;
-        }
+        }).finally(() => {
+            this.initializationPromise = null;
+        });
+
+        return this.initializationPromise;
     }
 
     /**
      * Initialize all data stores
      * @private
      */
-    async initializeStores() {
-        const participantId = sessionStore.getSessionData()?.participantId;
+    async initializeStores(participantId = null) {
+        const resolvedParticipantId = participantId || sessionStore.getSessionParticipantId?.() || null;
 
         logger.info('Initializing stores...');
 
@@ -120,7 +138,8 @@ class SyncService {
             actionsStore.initialize(this.sessionId),
             requestsStore.initialize(this.sessionId),
             timelineStore.initialize(this.sessionId),
-            participantsStore.initialize(this.sessionId, participantId)
+            participantsStore.initialize(this.sessionId, resolvedParticipantId),
+            communicationsStore.initialize(this.sessionId)
         ]);
 
         logger.info('All stores initialized');
@@ -170,6 +189,14 @@ class SyncService {
             }
         });
         this.unsubscribers.push(unsubParticipants);
+
+        // Communications changes
+        const unsubCommunications = realtimeService.on(CHANNELS.COMMUNICATIONS, (eventType, data) => {
+            if (['INSERT', 'UPDATE', 'DELETE'].includes(eventType)) {
+                communicationsStore.updateFromServer(eventType, data.new || data.old);
+            }
+        });
+        this.unsubscribers.push(unsubCommunications);
 
         // Handle subscription status changes
         const unsubStatus = realtimeService.onAll((eventType, data) => {
@@ -233,7 +260,8 @@ class SyncService {
                     actionsStore.loadActions(),
                     requestsStore.loadRequests(),
                     timelineStore.loadEvents(),
-                    participantsStore.loadParticipants()
+                    participantsStore.loadParticipants(),
+                    communicationsStore.loadCommunications()
                 ]);
 
                 this.lastSyncTime = Date.now();
@@ -270,6 +298,9 @@ class SyncService {
                     break;
                 case 'participants':
                     await participantsStore.loadParticipants();
+                    break;
+                case 'communications':
+                    await communicationsStore.loadCommunications();
                     break;
                 default:
                     logger.warn('Unknown store:', storeName);
@@ -369,6 +400,11 @@ class SyncService {
     async reset() {
         logger.info('Resetting sync service');
 
+        if (this.syncDebounceTimer) {
+            clearTimeout(this.syncDebounceTimer);
+            this.syncDebounceTimer = null;
+        }
+
         // Unsubscribe from all handlers
         this.unsubscribers.forEach(unsub => {
             try {
@@ -388,12 +424,12 @@ class SyncService {
         requestsStore.reset();
         timelineStore.reset();
         participantsStore.reset();
+        communicationsStore.reset();
 
         // Reset local state
         this.sessionId = null;
         this.initialized = false;
         this.lastSyncTime = 0;
-        this.statusListeners.clear();
         this.setStatus(SYNC_STATUS.IDLE);
 
         logger.info('Sync service reset complete');
@@ -404,6 +440,7 @@ class SyncService {
      */
     async destroy() {
         await this.reset();
+        this.statusListeners.clear();
     }
 }
 
