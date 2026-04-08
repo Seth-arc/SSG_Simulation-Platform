@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       VITE_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}/
+      PAGES_ENABLEMENT_TOKEN: ${{ secrets.PAGES_ENABLEMENT_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -38,7 +39,7 @@ jobs:
         run: gh api repos/${{ github.repository }}/pages > /dev/null
 
       - name: Fail with Pages bootstrap instructions
-        if: ${{ steps.pages-site.outcome == 'failure' && secrets.PAGES_ENABLEMENT_TOKEN == '' }}
+        if: ${{ steps.pages-site.outcome == 'failure' && env.PAGES_ENABLEMENT_TOKEN == '' }}
         run: |
           echo "::error title=GitHub Pages is not enabled::This repository does not have GitHub Pages enabled yet. Either enable Pages manually in Settings > Pages and choose GitHub Actions, or add a PAGES_ENABLEMENT_TOKEN secret so the workflow can bootstrap Pages automatically."
           exit 1
@@ -49,8 +50,8 @@ jobs:
           # Custom workflow publishing requires Pages to exist first.
           # If PAGES_ENABLEMENT_TOKEN is provided, configure-pages can bootstrap
           # the repository for GitHub Actions publishing on the first run.
-          token: ${{ secrets.PAGES_ENABLEMENT_TOKEN != '' && secrets.PAGES_ENABLEMENT_TOKEN || github.token }}
-          enablement: ${{ steps.pages-site.outcome == 'failure' && secrets.PAGES_ENABLEMENT_TOKEN != '' }}
+          token: ${{ env.PAGES_ENABLEMENT_TOKEN != '' && env.PAGES_ENABLEMENT_TOKEN || github.token }}
+          enablement: ${{ steps.pages-site.outcome == 'failure' && env.PAGES_ENABLEMENT_TOKEN != '' }}
 
       - name: Install dependencies
         run: npm ci
