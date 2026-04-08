@@ -31,4 +31,11 @@ describe('landing public role visibility', () => {
         expect(html).toContain('data-simulation="fractured-order"');
         expect(html).toContain('bootFracturedOrderOption');
     });
+
+    it('contains the operator password field inside a form', () => {
+        const html = readFileSync(LANDING_HTML_PATH, 'utf8');
+
+        expect(html).toContain('id="operatorAccessForm"');
+        expect(html).toContain('id="operatorAccessCode"');
+    });
 });

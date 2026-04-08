@@ -7,13 +7,13 @@
     <meta name="description" content="ESG Economic Statecraft Simulation Platform">
     <title>SSG Platform</title>
 
-  <script type="module" crossorigin src="/assets/main-ttzQYhmy.js"></script>
+  <script type="module" crossorigin src="/assets/main-D0HaOh47.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/supabase-BQbgwcOn.js">
   <link rel="modulepreload" crossorigin href="/assets/main-Bj4Mtr9K.js">
   <link rel="modulepreload" crossorigin href="/assets/validation-C4xOqcjM.js">
   <link rel="stylesheet" crossorigin href="/assets/main-Zi4aJJ8H.css">
   <link rel="stylesheet" crossorigin href="/assets/validation-cvd1K-Uc.css">
-  <link rel="stylesheet" crossorigin href="/assets/main-BOvKuGEt.css">
+  <link rel="stylesheet" crossorigin href="/assets/main-DmJUUF0T.css">
 </head>
 
 <body>
@@ -26,8 +26,7 @@
             <p class="boot-label">Strategic Simulations Group</p>
             <div class="boot-progress"><div class="boot-progress-fill"></div></div>
             <span class="boot-status-text" id="ssgBootStatusText">Establishing secure channel</span>
-            <div class="boot-simulation-selector" id="bootSimulationSelector" aria-labelledby="bootSimulationLabel">
-                <p class="boot-selector-label" id="bootSimulationLabel">Select Simulation</p>
+            <div class="boot-simulation-selector" id="bootSimulationSelector">
                 <div class="boot-simulation-options" role="group" aria-label="Simulation selection">
                     <button
                         type="button"
@@ -124,7 +123,7 @@
 
                 <details class="op-details" id="operatorAccessSection">
                     <summary class="op-summary">Operator Access</summary>
-                    <div class="op-body">
+                    <form class="op-body" id="operatorAccessForm" novalidate>
                         <div class="lf-field">
                             <label for="operatorAccessCode">Access Code</label>
                             <input type="password" id="operatorAccessCode" class="form-input"
@@ -138,7 +137,7 @@
                             <button type="button" class="btn btn-secondary btn-sm" id="operatorWhiteCellSupportBtn"
                                 title="Supports the White Cell lead operator">WC Support</button>
                         </div>
-                    </div>
+                    </form>
                 </details>
             </div>
         </main>
@@ -210,9 +209,7 @@
                 .forEach(([delay, text]) => setTimeout(() => { if (status) status.textContent = text; }, delay));
 
             // Keep the loader onscreen until the user explicitly selects the simulation.
-            // 1. Landing begins fading in (opacity 0→1 over 1.6s)
-            // 2. 300ms later loader begins fading out (opacity 1→0 over 1.4s)
-            // The net effect is a long dissolve where dark blends into dark.
+            // Once selected, the landing page dissolves in and the loader removes itself.
             setTimeout(unlockSimulationSelection, 3200);
         });
     </script>

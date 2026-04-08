@@ -278,6 +278,7 @@ CREATE OR REPLACE FUNCTION public.live_demo_validate_operator_code(requested_cod
 RETURNS BOOLEAN
 LANGUAGE SQL
 STABLE
+SET search_path = public, extensions
 AS $$
     SELECT
         requested_code IS NOT NULL
