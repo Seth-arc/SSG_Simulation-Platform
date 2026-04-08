@@ -248,6 +248,9 @@ export class NotetakerController {
         const dynamicsForm = document.getElementById('dynamicsForm');
         if (dynamicsForm) {
             dynamicsForm.addEventListener('input', () => this.handleDynamicsChange());
+            dynamicsForm.addEventListener('submit', (e) => {
+                void this.handleDynamicsSubmit(e);
+            });
         }
 
         // Range sliders display
@@ -271,6 +274,9 @@ export class NotetakerController {
         const allianceForm = document.getElementById('allianceForm');
         if (allianceForm) {
             allianceForm.addEventListener('input', () => this.handleAllianceChange());
+            allianceForm.addEventListener('submit', (e) => {
+                void this.handleAllianceSubmit(e);
+            });
         }
     }
 
@@ -561,9 +567,27 @@ export class NotetakerController {
     }
 
     /**
+     * Handle manual dynamics save submit
+     * @param {Event} e - Submit event
+     */
+    async handleDynamicsSubmit(e) {
+        e.preventDefault();
+        this.dynamicsAutoSaveDebounce?.cancel?.();
+        this.dynamicsData = this.collectDynamicsFormData();
+        this.setAutoSaveStatus('dynamics', 'saving');
+        await this.saveDynamicsData({
+            showSuccessToast: true,
+            showErrorToast: true
+        });
+    }
+
+    /**
      * Save dynamics data to database
      */
-    async saveDynamicsData() {
+    async saveDynamicsData({
+        showSuccessToast = false,
+        showErrorToast = false
+    } = {}) {
         const sessionId = sessionStore.getSessionId();
         if (!sessionId) return;
 
@@ -573,10 +597,16 @@ export class NotetakerController {
                 dynamics_analysis: this.dynamicsData
             });
             this.setAutoSaveStatus('dynamics', 'saved');
+            if (showSuccessToast) {
+                showToast('Team dynamics saved', { type: 'success' });
+            }
             logger.debug('Dynamics data saved');
         } catch (err) {
             logger.error('Failed to save dynamics data:', err);
             this.setAutoSaveStatus('dynamics', 'error');
+            if (showErrorToast) {
+                showToast('Failed to save team dynamics', { type: 'error' });
+            }
         }
     }
 
@@ -605,9 +635,27 @@ export class NotetakerController {
     }
 
     /**
+     * Handle manual alliance save submit
+     * @param {Event} e - Submit event
+     */
+    async handleAllianceSubmit(e) {
+        e.preventDefault();
+        this.allianceAutoSaveDebounce?.cancel?.();
+        this.allianceData = this.collectAllianceFormData();
+        this.setAutoSaveStatus('alliance', 'saving');
+        await this.saveAllianceData({
+            showSuccessToast: true,
+            showErrorToast: true
+        });
+    }
+
+    /**
      * Save alliance data to database
      */
-    async saveAllianceData() {
+    async saveAllianceData({
+        showSuccessToast = false,
+        showErrorToast = false
+    } = {}) {
         const sessionId = sessionStore.getSessionId();
         if (!sessionId) return;
 
@@ -617,10 +665,16 @@ export class NotetakerController {
                 external_factors: this.allianceData
             });
             this.setAutoSaveStatus('alliance', 'saved');
+            if (showSuccessToast) {
+                showToast('Alliance tracking saved', { type: 'success' });
+            }
             logger.debug('Alliance data saved');
         } catch (err) {
             logger.error('Failed to save alliance data:', err);
             this.setAutoSaveStatus('alliance', 'error');
+            if (showErrorToast) {
+                showToast('Failed to save alliance tracking', { type: 'error' });
+            }
         }
     }
 
