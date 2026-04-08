@@ -548,7 +548,7 @@ When done, summarize:
 npm run build
 npm test -- --run
 ```
-
+Completed 7 April
 ---
 
 ## Prompt 9 - Add meaningful coverage and a rehearsal workflow for the 12-user live demo
@@ -603,7 +603,7 @@ npm test -- --run
 npm run test:e2e
 npm run build
 ```
-
+Completed 7 April
 ---
 
 ## Exit Criteria For This Book
