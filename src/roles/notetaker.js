@@ -23,6 +23,11 @@ import { formatDateTime, formatRelativeTime } from '../utils/formatting.js';
 import { debounce } from '../utils/debounce.js';
 import { navigateToApp } from '../core/navigation.js';
 import { resolveTeamContext } from '../core/teamContext.js';
+import {
+    buildNotetakerParticipantContext,
+    filterObservationTimelineByTeam,
+    readParticipantScopedNotetakerSection
+} from '../features/notetaker/storage.js';
 
 const logger = createLogger('Notetaker');
 
@@ -44,19 +49,25 @@ export function getNotetakerRecordForMove(records = [], move = 1) {
     return (records || []).find((record) => record.move === move) || null;
 }
 
-export function buildNotetakerViewState(record = null) {
+export function buildNotetakerViewState(record = null, {
+    teamId = null,
+    participantKey = null
+} = {}) {
     return {
-        dynamicsData: {
-            ...DEFAULT_DYNAMICS_DATA,
-            ...(record?.dynamics_analysis || {})
-        },
-        allianceData: {
-            ...DEFAULT_ALLIANCE_DATA,
-            ...(record?.external_factors || {})
-        },
-        observationTimeline: Array.isArray(record?.observation_timeline)
-            ? record.observation_timeline
-            : []
+        dynamicsData: readParticipantScopedNotetakerSection(record?.dynamics_analysis, DEFAULT_DYNAMICS_DATA, {
+            teamId,
+            participantKey,
+            fallbackTeamId: record?.team
+        }),
+        allianceData: readParticipantScopedNotetakerSection(record?.external_factors, DEFAULT_ALLIANCE_DATA, {
+            teamId,
+            participantKey,
+            fallbackTeamId: record?.team
+        }),
+        observationTimeline: filterObservationTimelineByTeam(record?.observation_timeline, {
+            teamId,
+            fallbackTeamId: record?.team
+        })
     };
 }
 
@@ -66,7 +77,12 @@ export function createObservationTimelineEntry({
     content,
     phase = 1,
     createdAt = new Date().toISOString(),
-    factionTag = null
+    factionTag = null,
+    teamId = null,
+    participantKey = null,
+    participantId = null,
+    participantLabel = null,
+    clientId = null
 } = {}) {
     return {
         id,
@@ -74,6 +90,11 @@ export function createObservationTimelineEntry({
         timestamp: createdAt,
         phase,
         content,
+        ...(teamId ? { team: teamId } : {}),
+        ...(participantKey ? { participant_key: participantKey } : {}),
+        ...(participantId ? { participant_id: participantId } : {}),
+        ...(participantLabel ? { participant_label: participantLabel } : {}),
+        ...(clientId ? { client_id: clientId } : {}),
         ...(factionTag ? { faction_tag: factionTag } : {})
     };
 }
@@ -81,7 +102,7 @@ export function createObservationTimelineEntry({
 const AUTO_SAVE_TEXT = {
     idle: 'No unsaved changes',
     saving: 'Saving...',
-    saved: 'Saved',
+    saved: 'Saved to your notes',
     error: 'Save failed'
 };
 
@@ -109,6 +130,12 @@ export class NotetakerController {
         this.teamContext = resolveTeamContext();
         this.teamId = this.teamContext.teamId;
         this.teamLabel = this.teamContext.teamLabel;
+        this.participantContext = {
+            participantKey: null,
+            participantId: null,
+            clientId: null,
+            participantLabel: null
+        };
     }
 
     /**
@@ -136,6 +163,7 @@ export class NotetakerController {
             return;
         }
 
+        this.refreshParticipantContext();
         this.configureTeamLabels();
         await syncService.initialize(sessionId, {
             participantId: sessionStore.getSessionParticipantId?.() || null
@@ -153,9 +181,57 @@ export class NotetakerController {
 
     configureTeamLabels() {
         const headerTitle = document.querySelector('.header-title');
+        const captureDescription = document.querySelector('#captureSection .section-description');
+        const dynamicsDescription = document.querySelector('#dynamicsSection .section-description');
+        const allianceDescription = document.querySelector('#allianceSection .section-description');
+        const scopeNotice = document.getElementById('notetakerScopeNotice');
+        const captureScopeHint = document.getElementById('captureScopeHint');
+        const dynamicsScopeHint = document.getElementById('dynamicsScopeHint');
+        const allianceScopeHint = document.getElementById('allianceScopeHint');
+
         if (headerTitle) {
             headerTitle.textContent = this.teamContext.notetakerLabel;
         }
+
+        if (captureDescription) {
+            captureDescription.textContent = 'Append observations, moments, and quotes as separate shared entries.';
+        }
+
+        if (dynamicsDescription) {
+            dynamicsDescription.textContent = 'Your move notes are saved per notetaker seat and do not overwrite another notetaker.';
+        }
+
+        if (allianceDescription) {
+            allianceDescription.textContent = 'Alliance notes are stored per notetaker seat while captures remain shared and append-only.';
+        }
+
+        if (scopeNotice) {
+            scopeNotice.textContent = 'Move notes are saved per notetaker seat. Quick captures append shared entries for the whole team.';
+        }
+
+        if (captureScopeHint) {
+            captureScopeHint.textContent = 'Each capture is appended with your notetaker seat and never replaces another observation.';
+        }
+
+        if (dynamicsScopeHint) {
+            dynamicsScopeHint.textContent = 'These fields save to your own move notes. Other notetakers keep separate copies.';
+        }
+
+        if (allianceScopeHint) {
+            allianceScopeHint.textContent = 'Use this space for your seat-specific alliance summary. It will not replace another notetaker\'s alliance notes.';
+        }
+    }
+
+    refreshParticipantContext() {
+        this.participantContext = buildNotetakerParticipantContext({
+            participant_key: sessionStore.getSessionParticipantId?.(),
+            participant_id: sessionStore.getSessionParticipantId?.(),
+            client_id: sessionStore.getClientId(),
+            participant_label: sessionStore.getSessionData()?.displayName || sessionStore.getUserName?.() || null
+        }, {
+            fallbackClientId: sessionStore.getClientId(),
+            fallbackParticipantLabel: sessionStore.getSessionData()?.displayName || null
+        });
     }
 
     /**
@@ -349,7 +425,12 @@ export class NotetakerController {
                 type,
                 content,
                 phase: captureData.phase,
-                createdAt: createdEvent?.created_at || new Date().toISOString()
+                createdAt: createdEvent?.created_at || new Date().toISOString(),
+                teamId: this.teamId,
+                participantKey: this.participantContext.participantKey,
+                participantId: this.participantContext.participantId,
+                participantLabel: this.participantContext.participantLabel,
+                clientId: this.participantContext.clientId
             });
 
             try {
@@ -426,7 +507,10 @@ export class NotetakerController {
 
         try {
             const record = await database.getNotetakerData(sessionId, this.currentMove);
-            const viewState = buildNotetakerViewState(record);
+            const viewState = buildNotetakerViewState(record, {
+                teamId: this.teamId,
+                participantKey: this.participantContext.participantKey
+            });
 
             this.dynamicsData = viewState.dynamicsData;
             this.allianceData = viewState.allianceData;
@@ -584,13 +668,18 @@ export class NotetakerController {
     buildNotetakerPayloadBase() {
         const sessionId = sessionStore.getSessionId();
         const gameState = this.getCurrentGameState();
+        this.refreshParticipantContext();
 
         return {
             session_id: sessionId,
             move: gameState?.move ?? this.currentMove ?? 1,
             phase: gameState?.phase ?? this.currentPhase ?? 1,
             team: this.teamId,
-            client_id: sessionStore.getClientId()
+            client_id: this.participantContext.clientId,
+            participant_key: this.participantContext.participantKey,
+            session_participant_id: this.participantContext.participantId,
+            participant_id: this.participantContext.participantId,
+            participant_label: this.participantContext.participantLabel
         };
     }
 

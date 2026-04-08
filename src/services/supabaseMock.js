@@ -490,11 +490,10 @@ function canInsertTableRow(state, tableName, row, authUserId) {
         case 'timeline':
             return liveDemoCanWriteSession(state, authUserId, row.session_id);
         case 'notetaker_data':
-            return liveDemoCanWriteTeamSession(
+            return liveDemoCanWriteSessionSurface(
                 state,
                 authUserId,
                 row.session_id,
-                row.team,
                 ['notetaker']
             );
         default:
@@ -518,8 +517,8 @@ function canUpdateTableRow(state, tableName, currentRow, nextRow, authUserId) {
             );
         case 'notetaker_data':
             return (
-                liveDemoCanWriteTeamSession(state, authUserId, currentRow.session_id, currentRow.team, ['notetaker'])
-                && liveDemoCanWriteTeamSession(state, authUserId, nextRow.session_id, nextRow.team, ['notetaker'])
+                liveDemoCanWriteSessionSurface(state, authUserId, currentRow.session_id, ['notetaker'])
+                && liveDemoCanWriteSessionSurface(state, authUserId, nextRow.session_id, ['notetaker'])
             );
         default:
             return false;

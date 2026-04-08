@@ -11,8 +11,20 @@ import { gameStateStore } from '../../stores/index.js';
 import { showToast } from '../../components/ui/Toast.js';
 import { debounce } from '../../utils/debounce.js';
 import { createLogger } from '../../utils/logger.js';
+import {
+    buildNotetakerParticipantContext,
+    readParticipantScopedNotetakerSection
+} from './storage.js';
 
 const logger = createLogger('TeamDynamics');
+const DEFAULT_DYNAMICS_DATA = {
+    emergingLeaders: '',
+    decisionStyle: '',
+    frictionLevel: '5',
+    frictionSources: '',
+    consensusLevel: '5',
+    dynamicsSummary: ''
+};
 
 /**
  * Create a team dynamics tracking component
@@ -22,13 +34,13 @@ const logger = createLogger('TeamDynamics');
  * @returns {Object} Component controller
  */
 export function createTeamDynamics(options = {}) {
-    const { container, onSave } = options;
+    const { container, onSave, teamId = document.body?.dataset?.team || sessionStore.getSessionData()?.team || null } = options;
 
     if (!container) {
         throw new Error('Container element is required');
     }
 
-    let currentData = {};
+    let currentData = { ...DEFAULT_DYNAMICS_DATA };
     let autoSaveDebounce = null;
 
     // Create component structure
@@ -38,7 +50,7 @@ export function createTeamDynamics(options = {}) {
     wrapper.innerHTML = `
         <div class="team-dynamics-header">
             <h3 class="team-dynamics-title">Team Dynamics</h3>
-            <span class="team-dynamics-autosave" id="autoSaveStatus">Saved</span>
+            <span class="team-dynamics-autosave" id="autoSaveStatus">Saved to your notes</span>
         </div>
 
         <form class="team-dynamics-form" id="dynamicsForm">
@@ -149,6 +161,18 @@ export function createTeamDynamics(options = {}) {
         consensusValue.textContent = consensusLevel.value;
     });
 
+    function getParticipantContext() {
+        return buildNotetakerParticipantContext({
+            participant_key: sessionStore.getSessionParticipantId?.(),
+            participant_id: sessionStore.getSessionParticipantId?.(),
+            client_id: sessionStore.getClientId(),
+            participant_label: sessionStore.getSessionData()?.displayName || null
+        }, {
+            fallbackClientId: sessionStore.getClientId(),
+            fallbackParticipantLabel: sessionStore.getSessionData()?.displayName || null
+        });
+    }
+
     /**
      * Handle input changes
      */
@@ -210,14 +234,20 @@ export function createTeamDynamics(options = {}) {
         if (!sessionId) return;
 
         try {
+            const participantContext = getParticipantContext();
             await database.saveNotetakerData({
                 session_id: sessionId,
-                data_type: 'dynamics',
-                data: currentData,
-                move: gameStateStore.getCurrentMove()
+                move: gameStateStore.getCurrentMove(),
+                phase: gameStateStore.getCurrentPhase?.() ?? 1,
+                team: teamId,
+                client_id: participantContext.clientId,
+                participant_key: participantContext.participantKey,
+                participant_id: participantContext.participantId,
+                participant_label: participantContext.participantLabel,
+                dynamics_analysis: currentData
             });
 
-            autoSaveStatus.textContent = 'Saved';
+            autoSaveStatus.textContent = 'Saved to your notes';
             logger.debug('Team dynamics saved');
 
             if (onSave) onSave(currentData);
@@ -236,14 +266,13 @@ export function createTeamDynamics(options = {}) {
         if (!sessionId) return;
 
         try {
-            const data = await database.fetchNotetakerData(sessionId);
-
-            if (data) {
-                const dynamicsRecord = data.find(d => d.data_type === 'dynamics');
-                if (dynamicsRecord?.data) {
-                    setFormData(dynamicsRecord.data);
-                }
-            }
+            const participantContext = getParticipantContext();
+            const record = await database.getNotetakerData(sessionId, gameStateStore.getCurrentMove());
+            setFormData(readParticipantScopedNotetakerSection(record?.dynamics_analysis, DEFAULT_DYNAMICS_DATA, {
+                teamId,
+                participantKey: participantContext.participantKey,
+                fallbackTeamId: record?.team
+            }));
         } catch (err) {
             logger.error('Failed to load team dynamics:', err);
         }

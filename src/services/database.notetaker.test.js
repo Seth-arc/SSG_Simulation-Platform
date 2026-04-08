@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { mergeNotetakerRecord } from './database.js';
 
 describe('mergeNotetakerRecord', () => {
-    it('preserves existing schema fields when saving partial move-scoped updates', () => {
+    it('preserves existing participant entries when another notetaker saves the same move', () => {
         const existingRecord = {
             session_id: 'session-1',
             move: 2,
@@ -11,14 +11,46 @@ describe('mergeNotetakerRecord', () => {
             team: 'blue',
             client_id: 'client-1',
             dynamics_analysis: {
-                emergingLeaders: 'Alex'
+                schema_version: 2,
+                team_entries: {
+                    blue: {
+                        participant_entries: {
+                            'seat-blue-1': {
+                                participant_key: 'seat-blue-1',
+                                participant_id: 'seat-blue-1',
+                                client_id: 'client-1',
+                                updated_at: '2026-04-06T10:55:00.000Z',
+                                data: {
+                                    emergingLeaders: 'Alex'
+                                }
+                            }
+                        }
+                    }
+                }
             },
             external_factors: {
-                allianceNotes: 'Existing alliance note'
+                schema_version: 2,
+                team_entries: {
+                    blue: {
+                        participant_entries: {
+                            'seat-blue-1': {
+                                participant_key: 'seat-blue-1',
+                                participant_id: 'seat-blue-1',
+                                client_id: 'client-1',
+                                updated_at: '2026-04-06T10:55:00.000Z',
+                                data: {
+                                    allianceNotes: 'Existing alliance note'
+                                }
+                            }
+                        }
+                    }
+                }
             },
             observation_timeline: [
                 {
                     id: 'obs-1',
+                    team: 'blue',
+                    participant_key: 'seat-blue-1',
                     type: 'NOTE',
                     content: 'Initial observation',
                     phase: 1,
@@ -31,6 +63,10 @@ describe('mergeNotetakerRecord', () => {
             session_id: 'session-1',
             move: 2,
             phase: 3,
+            team: 'blue',
+            client_id: 'client-2',
+            participant_key: 'seat-blue-2',
+            participant_id: 'seat-blue-2',
             dynamics_analysis: {
                 emergingLeaders: 'Jordan',
                 dynamicsSummary: 'New summary'
@@ -45,31 +81,47 @@ describe('mergeNotetakerRecord', () => {
             move: 2,
             phase: 3,
             team: 'blue',
-            client_id: 'client-1',
-            dynamics_analysis: {
+            client_id: 'client-2',
+            updated_at: '2026-04-06T11:00:00.000Z'
+        });
+        expect(mergedRecord.dynamics_analysis.team_entries.blue.participant_entries['seat-blue-1'].data).toEqual({
+            emergingLeaders: 'Alex'
+        });
+        expect(mergedRecord.dynamics_analysis.team_entries.blue.participant_entries['seat-blue-2']).toMatchObject({
+            participant_key: 'seat-blue-2',
+            participant_id: 'seat-blue-2',
+            client_id: 'client-2',
+            data: {
                 emergingLeaders: 'Jordan',
                 dynamicsSummary: 'New summary'
-            },
-            external_factors: {
-                allianceNotes: 'Existing alliance note'
-            },
-            updated_at: '2026-04-06T11:00:00.000Z'
+            }
+        });
+        expect(mergedRecord.external_factors.team_entries.blue.participant_entries['seat-blue-1'].data).toEqual({
+            allianceNotes: 'Existing alliance note'
         });
         expect(mergedRecord.observation_timeline).toEqual(existingRecord.observation_timeline);
     });
 
-    it('appends observation_timeline entries instead of replacing prior observations', () => {
+    it('appends observation_timeline entries with participant metadata instead of replacing prior observations', () => {
         const existingRecord = {
             session_id: 'session-1',
             move: 1,
             phase: 2,
             team: 'blue',
             client_id: 'client-1',
-            dynamics_analysis: {},
-            external_factors: {},
+            dynamics_analysis: {
+                schema_version: 2,
+                team_entries: {}
+            },
+            external_factors: {
+                schema_version: 2,
+                team_entries: {}
+            },
             observation_timeline: [
                 {
                     id: 'obs-1',
+                    team: 'blue',
+                    participant_key: 'seat-blue-1',
                     type: 'NOTE',
                     content: 'Existing note',
                     phase: 2,
@@ -81,6 +133,10 @@ describe('mergeNotetakerRecord', () => {
         const appendedRecord = mergeNotetakerRecord(existingRecord, {
             session_id: 'session-1',
             move: 1,
+            team: 'blue',
+            client_id: 'client-2',
+            participant_key: 'seat-blue-2',
+            participant_id: 'seat-blue-2',
             observation_timeline_append: [
                 {
                     id: 'obs-2',
@@ -98,6 +154,11 @@ describe('mergeNotetakerRecord', () => {
             existingRecord.observation_timeline[0],
             {
                 id: 'obs-2',
+                team: 'blue',
+                participant_key: 'seat-blue-2',
+                participant_id: 'seat-blue-2',
+                client_id: 'client-2',
+                participant_label: null,
                 type: 'QUOTE',
                 content: 'New quote',
                 phase: 2,

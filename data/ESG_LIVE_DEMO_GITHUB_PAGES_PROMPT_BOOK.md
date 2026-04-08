@@ -417,7 +417,7 @@ When done, summarize:
 npm run build
 npm test -- --run
 ```
-
+Completed 7 April
 ---
 
 ## Prompt 6 - Wire the shipped role pages to real-time sync and shared state
@@ -459,7 +459,7 @@ npm run build
 npm test -- --run
 npm run test:e2e
 ```
-
+Completed 7 April
 ---
 
 ## Prompt 7 - Make multi-notetaker and observer behavior safe for concurrent live use
@@ -504,7 +504,7 @@ When done, summarize:
 npm run build
 npm test -- --run
 ```
-
+Completed 7 April
 ---
 
 ## Prompt 8 - Simplify the operator surface to what the live session actually needs

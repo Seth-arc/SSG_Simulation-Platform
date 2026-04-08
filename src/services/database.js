@@ -16,6 +16,12 @@ import {
     canSubmitAction,
     isValidActionStatus
 } from '../core/enums.js';
+import {
+    annotateObservationTimelineEntries,
+    buildNotetakerParticipantContext,
+    mergeObservationTimeline,
+    mergeParticipantScopedNotetakerSection
+} from '../features/notetaker/storage.js';
 
 const logger = createLogger('Database');
 let latestAuthenticatedSession = null;
@@ -32,31 +38,58 @@ export function getDatabaseRuntimeStatus() {
     return getRuntimeConfigStatus();
 }
 
-export function normalizeObservationTimelineEntries(entries) {
-    return Array.isArray(entries)
-        ? entries.filter((entry) => entry && typeof entry === 'object')
-        : [];
-}
-
 export function mergeNotetakerRecord(existingRecord = null, noteData = {}, {
     clientId = null,
     timestamp = new Date().toISOString()
 } = {}) {
-    const existingTimeline = normalizeObservationTimelineEntries(existingRecord?.observation_timeline);
+    const resolvedTeamId = noteData.team ?? existingRecord?.team ?? null;
+    const participantContext = buildNotetakerParticipantContext(noteData, {
+        fallbackClientId: noteData.client_id ?? existingRecord?.client_id ?? clientId
+    });
     const replacementTimeline = Array.isArray(noteData.observation_timeline)
-        ? normalizeObservationTimelineEntries(noteData.observation_timeline)
+        ? annotateObservationTimelineEntries(noteData.observation_timeline, {
+            teamId: resolvedTeamId,
+            timestamp,
+            ...participantContext
+        })
         : null;
-    const appendedTimeline = normalizeObservationTimelineEntries(noteData.observation_timeline_append);
+    const appendedTimeline = annotateObservationTimelineEntries(noteData.observation_timeline_append, {
+        teamId: resolvedTeamId,
+        timestamp,
+        ...participantContext
+    });
+    const mergedTeam = (
+        existingRecord?.team
+        && noteData.team
+        && existingRecord.team !== noteData.team
+    )
+        ? 'shared'
+        : (noteData.team ?? existingRecord?.team ?? null);
 
     return {
         session_id: noteData.session_id ?? existingRecord?.session_id ?? null,
         move: noteData.move ?? existingRecord?.move ?? null,
         phase: noteData.phase ?? existingRecord?.phase ?? null,
-        team: noteData.team ?? existingRecord?.team ?? null,
-        client_id: noteData.client_id ?? existingRecord?.client_id ?? clientId ?? null,
-        dynamics_analysis: noteData.dynamics_analysis ?? existingRecord?.dynamics_analysis ?? {},
-        external_factors: noteData.external_factors ?? existingRecord?.external_factors ?? {},
-        observation_timeline: replacementTimeline ?? [...existingTimeline, ...appendedTimeline],
+        team: mergedTeam,
+        client_id: participantContext.clientId ?? existingRecord?.client_id ?? clientId ?? null,
+        dynamics_analysis: noteData.dynamics_analysis === undefined
+            ? existingRecord?.dynamics_analysis ?? {}
+            : mergeParticipantScopedNotetakerSection(existingRecord?.dynamics_analysis, noteData.dynamics_analysis, {
+                teamId: resolvedTeamId,
+                timestamp,
+                ...participantContext
+            }),
+        external_factors: noteData.external_factors === undefined
+            ? existingRecord?.external_factors ?? {}
+            : mergeParticipantScopedNotetakerSection(existingRecord?.external_factors, noteData.external_factors, {
+                teamId: resolvedTeamId,
+                timestamp,
+                ...participantContext
+            }),
+        observation_timeline: mergeObservationTimeline(existingRecord?.observation_timeline, {
+            replacementEntries: replacementTimeline,
+            appendedEntries: appendedTimeline
+        }),
         updated_at: timestamp
     };
 }
@@ -1186,50 +1219,84 @@ export const database = {
      */
     async saveNotetakerData(noteData) {
         await ensureAuthenticatedBrowser();
-        const timestamp = new Date().toISOString();
-        const { data: existing, error: existingError } = await supabase
-            .from('notetaker_data')
-            .select('*')
-            .eq('session_id', noteData.session_id)
-            .eq('move', noteData.move)
-            .maybeSingle();
+        const normalizedPayload = {
+            ...noteData,
+            ...buildNotetakerParticipantContext(noteData, {
+                fallbackClientId: sessionStore.getClientId(),
+                fallbackParticipantLabel: sessionStore.getSessionData()?.displayName || null
+            })
+        };
+        const maxAttempts = 4;
 
-        if (existingError) {
-            throw fromSupabaseError(existingError, 'getNotetakerDataForSave');
-        }
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            const timestamp = new Date().toISOString();
+            const { data: existing, error: existingError } = await supabase
+                .from('notetaker_data')
+                .select('*')
+                .eq('session_id', normalizedPayload.session_id)
+                .eq('move', normalizedPayload.move)
+                .maybeSingle();
 
-        const mergedRecord = mergeNotetakerRecord(existing, noteData, {
-            clientId: sessionStore.getClientId(),
-            timestamp
-        });
+            if (existingError) {
+                throw fromSupabaseError(existingError, 'getNotetakerDataForSave');
+            }
 
-        if (existing) {
+            const mergedRecord = mergeNotetakerRecord(existing, normalizedPayload, {
+                clientId: sessionStore.getClientId(),
+                timestamp
+            });
+
+            if (existing) {
+                const { data, error } = await supabase
+                    .from('notetaker_data')
+                    .update(mergedRecord)
+                    .eq('id', existing.id)
+                    .eq('updated_at', existing.updated_at)
+                    .select()
+                    .maybeSingle();
+
+                if (error) {
+                    throw fromSupabaseError(error, 'updateNotetakerData');
+                }
+
+                if (data) {
+                    return data;
+                }
+
+                logger.warn('Retrying notetaker save after a concurrent update.', {
+                    attempt,
+                    sessionId: normalizedPayload.session_id,
+                    move: normalizedPayload.move
+                });
+                continue;
+            }
+
             const { data, error } = await supabase
                 .from('notetaker_data')
-                .update(mergedRecord)
-                .eq('id', existing.id)
+                .insert(mergedRecord)
                 .select()
                 .single();
 
-            if (error) {
-                throw fromSupabaseError(error, 'updateNotetakerData');
+            if (!error) {
+                return data;
             }
 
-            return data;
-        }
+            if (error.code === '23505' || /duplicate key/i.test(error.message || '')) {
+                logger.warn('Retrying notetaker insert after a concurrent create.', {
+                    attempt,
+                    sessionId: normalizedPayload.session_id,
+                    move: normalizedPayload.move
+                });
+                continue;
+            }
 
-        // Create new
-        const { data, error } = await supabase
-            .from('notetaker_data')
-            .insert(mergedRecord)
-            .select()
-            .single();
-
-        if (error) {
             throw fromSupabaseError(error, 'createNotetakerData');
         }
 
-        return data;
+        throw new DatabaseError(
+            'Notetaker notes changed while saving. Reload the move notes and try again.',
+            'saveNotetakerData'
+        );
     },
 
     /**

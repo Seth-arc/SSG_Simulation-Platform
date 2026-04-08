@@ -11,8 +11,20 @@ import { gameStateStore } from '../../stores/index.js';
 import { showToast } from '../../components/ui/Toast.js';
 import { debounce } from '../../utils/debounce.js';
 import { createLogger } from '../../utils/logger.js';
+import {
+    buildNotetakerParticipantContext,
+    readParticipantScopedNotetakerSection
+} from './storage.js';
 
 const logger = createLogger('AllianceTracking');
+const DEFAULT_ALLIANCE_DATA = {
+    allianceFormation: '',
+    allianceStrength: '5',
+    allianceTensions: '',
+    externalPressures: '',
+    thirdPartyActions: '',
+    geopoliticalContext: ''
+};
 
 /**
  * Create an alliance tracking component
@@ -22,13 +34,13 @@ const logger = createLogger('AllianceTracking');
  * @returns {Object} Component controller
  */
 export function createAllianceTracking(options = {}) {
-    const { container, onSave } = options;
+    const { container, onSave, teamId = document.body?.dataset?.team || sessionStore.getSessionData()?.team || null } = options;
 
     if (!container) {
         throw new Error('Container element is required');
     }
 
-    let currentData = {};
+    let currentData = { ...DEFAULT_ALLIANCE_DATA };
     let autoSaveDebounce = null;
 
     // Create component structure
@@ -38,7 +50,7 @@ export function createAllianceTracking(options = {}) {
     wrapper.innerHTML = `
         <div class="alliance-tracking-header">
             <h3 class="alliance-tracking-title">Alliance & External Factors</h3>
-            <span class="alliance-tracking-autosave" id="autoSaveStatus">Saved</span>
+            <span class="alliance-tracking-autosave" id="autoSaveStatus">Saved to your notes</span>
         </div>
 
         <form class="alliance-tracking-form" id="allianceForm">
@@ -131,6 +143,18 @@ export function createAllianceTracking(options = {}) {
         allianceStrengthValue.textContent = allianceStrength.value;
     });
 
+    function getParticipantContext() {
+        return buildNotetakerParticipantContext({
+            participant_key: sessionStore.getSessionParticipantId?.(),
+            participant_id: sessionStore.getSessionParticipantId?.(),
+            client_id: sessionStore.getClientId(),
+            participant_label: sessionStore.getSessionData()?.displayName || null
+        }, {
+            fallbackClientId: sessionStore.getClientId(),
+            fallbackParticipantLabel: sessionStore.getSessionData()?.displayName || null
+        });
+    }
+
     /**
      * Handle input changes
      */
@@ -191,14 +215,20 @@ export function createAllianceTracking(options = {}) {
         if (!sessionId) return;
 
         try {
+            const participantContext = getParticipantContext();
             await database.saveNotetakerData({
                 session_id: sessionId,
-                data_type: 'alliance',
-                data: currentData,
-                move: gameStateStore.getCurrentMove()
+                move: gameStateStore.getCurrentMove(),
+                phase: gameStateStore.getCurrentPhase?.() ?? 1,
+                team: teamId,
+                client_id: participantContext.clientId,
+                participant_key: participantContext.participantKey,
+                participant_id: participantContext.participantId,
+                participant_label: participantContext.participantLabel,
+                external_factors: currentData
             });
 
-            autoSaveStatus.textContent = 'Saved';
+            autoSaveStatus.textContent = 'Saved to your notes';
             logger.debug('Alliance tracking saved');
 
             if (onSave) onSave(currentData);
@@ -217,14 +247,13 @@ export function createAllianceTracking(options = {}) {
         if (!sessionId) return;
 
         try {
-            const data = await database.fetchNotetakerData(sessionId);
-
-            if (data) {
-                const allianceRecord = data.find(d => d.data_type === 'alliance');
-                if (allianceRecord?.data) {
-                    setFormData(allianceRecord.data);
-                }
-            }
+            const participantContext = getParticipantContext();
+            const record = await database.getNotetakerData(sessionId, gameStateStore.getCurrentMove());
+            setFormData(readParticipantScopedNotetakerSection(record?.external_factors, DEFAULT_ALLIANCE_DATA, {
+                teamId,
+                participantKey: participantContext.participantKey,
+                fallbackTeamId: record?.team
+            }));
         } catch (err) {
             logger.error('Failed to load alliance tracking:', err);
         }

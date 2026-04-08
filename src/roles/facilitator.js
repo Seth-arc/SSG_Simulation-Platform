@@ -152,6 +152,10 @@ export class FacilitatorController {
         const headerTitle = document.querySelector('.header-title');
         const captureNavItem = document.getElementById('captureNavItem');
         const captureSection = document.getElementById('captureSection');
+        const actionsDescription = document.querySelector('#actionsSection .section-description');
+        const requestsDescription = document.querySelector('#requestsSection .section-description');
+        const responsesDescription = document.querySelector('#responsesSection .section-description');
+        const timelineDescription = document.querySelector('#timelineSection .section-description');
 
         document.body.dataset.facilitatorMode = this.isReadOnly ? 'observer' : 'facilitator';
 
@@ -168,6 +172,11 @@ export class FacilitatorController {
         writeControls.forEach((element) => {
             element.hidden = this.isReadOnly;
             element.toggleAttribute('aria-hidden', this.isReadOnly);
+
+            element.querySelectorAll?.('button, input, select, textarea').forEach((control) => {
+                control.disabled = this.isReadOnly;
+                control.toggleAttribute('aria-disabled', this.isReadOnly);
+            });
         });
 
         if (captureNavItem) {
@@ -178,15 +187,39 @@ export class FacilitatorController {
             captureSection.style.display = 'none';
         }
 
+        if (actionsDescription) {
+            actionsDescription.textContent = this.isReadOnly
+                ? 'Passive observer view of facilitator actions. Drafts are visible but cannot be created, edited, submitted, or deleted.'
+                : 'Draft actions, submit them to White Cell, and track adjudication results.';
+        }
+
+        if (requestsDescription) {
+            requestsDescription.textContent = this.isReadOnly
+                ? 'Passive observer view of RFIs and responses. Request submission is disabled in observer mode.'
+                : 'Submit questions to White Cell and monitor the response status.';
+        }
+
+        if (responsesDescription) {
+            responsesDescription.textContent = this.isReadOnly
+                ? 'Passive feed of White Cell responses to this team.'
+                : 'View responses to your RFIs and communications';
+        }
+
+        if (timelineDescription) {
+            timelineDescription.textContent = this.isReadOnly
+                ? 'Passive session activity feed for the selected team.'
+                : 'Chronological view of all events';
+        }
+
         if (notice) {
             if (this.isReadOnly) {
                 notice.style.display = 'block';
                 notice.innerHTML = `
                     <h2 class="font-semibold mb-2">Observer Mode</h2>
                     <p class="text-sm text-gray-600">
-                        This page is read-only for the observer role. You can review facilitator actions,
-                        White Cell responses, and the timeline, but create, edit, submit, delete, and
-                        capture controls are disabled.
+                        This page is passive for the observer role. You can review facilitator actions,
+                        White Cell responses, RFIs, and the timeline, but create, edit, submit, delete,
+                        and capture paths are blocked in code and hidden in the interface.
                     </p>
                 `;
             } else {
@@ -206,6 +239,16 @@ export class FacilitatorController {
         const newActionBtn = document.getElementById('newActionBtn');
         const newRfiBtn = document.getElementById('newRfiBtn');
         const captureForm = document.getElementById('captureForm');
+
+        if (this.isReadOnly) {
+            newActionBtn?.setAttribute('aria-disabled', 'true');
+            newRfiBtn?.setAttribute('aria-disabled', 'true');
+            captureForm?.querySelectorAll?.('button, input, select, textarea').forEach((control) => {
+                control.disabled = true;
+                control.setAttribute('aria-disabled', 'true');
+            });
+            return;
+        }
 
         newActionBtn?.addEventListener('click', () => this.showCreateActionModal());
         newRfiBtn?.addEventListener('click', () => this.showCreateRfiModal());
@@ -738,6 +781,7 @@ export class FacilitatorController {
     }
 
     async submitAction(actionId) {
+        if (!this.requireWriteAccess()) return;
         const loader = showLoader({ message: 'Submitting action...' });
 
         try {
@@ -783,6 +827,7 @@ export class FacilitatorController {
     }
 
     async deleteAction(actionId) {
+        if (!this.requireWriteAccess()) return;
         const loader = showLoader({ message: 'Deleting draft...' });
 
         try {

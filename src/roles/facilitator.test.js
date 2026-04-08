@@ -3,6 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const showToast = vi.fn();
 const showModal = vi.fn();
 const createTimelineEvent = vi.fn();
+const createAction = vi.fn();
+const updateDraftAction = vi.fn();
+const submitActionRecord = vi.fn();
+const deleteDraftAction = vi.fn();
+const createRequest = vi.fn();
 
 vi.mock('../components/ui/Toast.js', () => ({
     showToast
@@ -23,6 +28,11 @@ vi.mock('../components/ui/Loader.js', () => ({
 
 vi.mock('../services/database.js', () => ({
     database: {
+        createAction,
+        updateDraftAction,
+        submitAction: submitActionRecord,
+        deleteDraftAction,
+        createRequest,
         createTimelineEvent,
         fetchActions: vi.fn(),
         fetchRequests: vi.fn(),
@@ -78,11 +88,22 @@ describe('Facilitator observer enforcement', () => {
         controller.isReadOnly = true;
 
         controller.showCreateActionModal();
+        controller.showCreateRfiModal();
+        await controller.handleCreateAction();
+        await controller.handleUpdateAction(null, 'action-1');
+        await controller.submitAction('action-1');
+        await controller.deleteAction('action-1');
+        await controller.handleCreateRfi();
         await controller.handleCaptureSubmit({
             preventDefault: vi.fn()
         });
 
         expect(showModal).not.toHaveBeenCalled();
+        expect(createAction).not.toHaveBeenCalled();
+        expect(updateDraftAction).not.toHaveBeenCalled();
+        expect(submitActionRecord).not.toHaveBeenCalled();
+        expect(deleteDraftAction).not.toHaveBeenCalled();
+        expect(createRequest).not.toHaveBeenCalled();
         expect(createTimelineEvent).not.toHaveBeenCalled();
         expect(showToast).toHaveBeenCalledWith({
             message: 'Observer mode is read-only on the facilitator page.',
