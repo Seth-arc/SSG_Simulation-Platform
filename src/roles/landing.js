@@ -7,7 +7,7 @@
 
 import { sessionStore } from '../stores/session.js';
 import { database } from '../services/database.js';
-import { getRuntimeConfigStatus } from '../services/supabase.js';
+import { ensureBrowserIdentity, getRuntimeConfigStatus } from '../services/supabase.js';
 import { createLogger } from '../utils/logger.js';
 import { showToast } from '../components/ui/Toast.js';
 import { showLoader, hideLoader } from '../components/ui/Loader.js';
@@ -30,7 +30,7 @@ const logger = createLogger('Landing');
 /**
  * Landing Page Controller Class
  */
-class LandingController {
+export class LandingController {
     constructor() {
         this.selectedTeam = TEAM_OPTIONS[0].id;
         this.selectedRoleSurface = null;
@@ -56,6 +56,7 @@ class LandingController {
 
         this.bindEventListeners();
         this.selectDefaultTeam();
+        void this.prewarmBrowserIdentity();
         logger.info('Landing page initialized');
     }
 
@@ -206,6 +207,19 @@ class LandingController {
         }
     }
 
+    async prewarmBrowserIdentity({ interactive = false } = {}) {
+        try {
+            await ensureBrowserIdentity({
+                clientId: sessionStore.getClientId()
+            });
+        } catch (error) {
+            logger.warn('Browser identity bootstrap failed:', error);
+            if (interactive) {
+                throw error;
+            }
+        }
+    }
+
     /**
      * Handle join session form submission
      * @param {Event} e - Submit event
@@ -250,18 +264,17 @@ class LandingController {
         const loader = showLoader({ message: 'Joining session...' });
 
         try {
+            await this.prewarmBrowserIdentity({ interactive: true });
             const session = await this.findSessionByCode(sessionCode);
-            const sessionCodeFromMetadata = session.metadata?.session_code;
+            const sessionCodeFromLookup = session.session_code || sessionCode;
 
             // Check role availability
-            const participants = await database.getActiveParticipants(session.id);
             const parsedRole = parseTeamRole(this.selectedRole);
             const participantTeam = parsedRole.teamId || this.selectedTeam;
-
-            const roleCount = (participants || []).filter(p => p.role === this.selectedRole && p.is_active).length;
             const roleLimit = CONFIG.ROLE_LIMITS[this.selectedRole] || 999;
+            const availability = await database.checkRoleAvailability(session.id, this.selectedRole, roleLimit);
 
-            if (roleCount >= roleLimit) {
+            if (!availability.available) {
                 throw new Error(`The ${getRoleDisplayName(this.selectedRole, { observerTeamId: participantTeam })} role is full. Please choose another role.`);
             }
 
@@ -276,7 +289,7 @@ class LandingController {
             sessionStore.setSessionData({
                 id: session.id,
                 name: session.name,
-                code: sessionCodeFromMetadata,
+                code: sessionCodeFromLookup,
                 participantId: participant.id,
                 role: this.selectedRole,
                 displayName,
@@ -353,18 +366,9 @@ class LandingController {
     }
 
     async findSessionByCode(sessionCode) {
-        // Prompt 3 replaces this temporary browser-side lookup with a server-side join path.
-        const allSessions = await database.getActiveSessions();
-        const session = (allSessions || []).find((candidate) => {
-            const code = candidate.metadata?.session_code;
-            return code && code.toUpperCase() === sessionCode;
-        });
-
-        if (!session) {
-            throw new Error('Session not found. Please check the code and try again.');
-        }
-
-        return session;
+        // Operator note: public participants must resolve session codes through the
+        // authenticated server-side RPC. Do not reintroduce browser-side session listing.
+        return database.lookupJoinableSessionByCode(sessionCode);
     }
 
     authorizeGameMaster() {
@@ -396,8 +400,9 @@ class LandingController {
             return;
         }
 
+        await this.prewarmBrowserIdentity({ interactive: true });
         const session = await this.findSessionByCode(sessionCode);
-        const sessionCodeFromMetadata = session.metadata?.session_code || sessionCode;
+        const sessionCodeFromLookup = session.session_code || sessionCode;
         const whiteCellRole = buildTeamRole(this.selectedTeam, ROLE_SURFACES.WHITECELL);
 
         sessionStore.clear();
@@ -407,7 +412,7 @@ class LandingController {
         sessionStore.setSessionData({
             id: session.id,
             name: session.name,
-            code: sessionCodeFromMetadata,
+            code: sessionCodeFromLookup,
             participantId: null,
             role: whiteCellRole,
             displayName: operatorName,
@@ -418,7 +423,7 @@ class LandingController {
         sessionStore.setOperatorAuth({
             surface: OPERATOR_SURFACES.WHITE_CELL,
             sessionId: session.id,
-            sessionCode: sessionCodeFromMetadata,
+            sessionCode: sessionCodeFromLookup,
             teamId: this.selectedTeam,
             role: whiteCellRole,
             operatorName
@@ -496,12 +501,14 @@ class LandingController {
 }
 
 // Initialize
-const landingController = new LandingController();
+export const landingController = new LandingController();
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => landingController.init());
-} else {
-    landingController.init();
+if (!globalThis.__ESG_DISABLE_AUTO_INIT__) {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => landingController.init());
+    } else {
+        landingController.init();
+    }
 }
 
 export default landingController;

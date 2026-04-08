@@ -1,5 +1,6 @@
 const E2E_MOCK_FLAG_KEY = 'esg_e2e_mock';
 const E2E_MOCK_STATE_KEY = 'esg_e2e_backend_state';
+const E2E_MOCK_AUTH_KEY = 'esg_e2e_auth_session';
 
 const MOCK_TABLES = [
     'sessions',
@@ -71,6 +72,38 @@ function writeMockState(state) {
     storage.setItem(E2E_MOCK_STATE_KEY, JSON.stringify(state));
 }
 
+function readMockAuthSession() {
+    const storage = getStorage();
+    if (!storage) {
+        return null;
+    }
+
+    const rawSession = storage.getItem(E2E_MOCK_AUTH_KEY);
+    if (!rawSession) {
+        return null;
+    }
+
+    try {
+        return JSON.parse(rawSession);
+    } catch (_error) {
+        return null;
+    }
+}
+
+function writeMockAuthSession(session) {
+    const storage = getStorage();
+    if (!storage) {
+        return;
+    }
+
+    if (!session) {
+        storage.removeItem(E2E_MOCK_AUTH_KEY);
+        return;
+    }
+
+    storage.setItem(E2E_MOCK_AUTH_KEY, JSON.stringify(session));
+}
+
 function nextId(state, tableName) {
     state.counters[tableName] = (state.counters[tableName] || 0) + 1;
     const normalizedName = tableName.replace(/[^a-z0-9]+/gi, '_');
@@ -93,6 +126,7 @@ function normalizeInsertRow(tableName, payload, state) {
             return {
                 ...baseRow,
                 status: 'active',
+                session_code: null,
                 metadata: {},
                 updated_at: timestamp,
                 ...cloneValue(payload)
@@ -434,6 +468,7 @@ export function isE2EMockEnabled() {
 
 export function resetE2EMockState() {
     writeMockState(buildInitialMockState());
+    writeMockAuthSession(null);
 }
 
 export function createE2EMockSupabaseClient() {
@@ -459,11 +494,77 @@ export function createE2EMockSupabaseClient() {
                 unsubscribe() {}
             };
         },
-        rpc: async () => ({ data: null, error: null }),
+        rpc: async (functionName, params = {}) => {
+            if (functionName === 'lookup_joinable_session_by_code') {
+                const normalizedCode = String(params?.requested_code || '').trim().toUpperCase();
+                const state = readMockState();
+                const session = (state.tables.sessions || []).find((entry) => {
+                    const resolvedCode = String(entry.session_code || entry.metadata?.session_code || '')
+                        .trim()
+                        .toUpperCase();
+                    return resolvedCode === normalizedCode;
+                });
+
+                if (!session) {
+                    return {
+                        data: null,
+                        error: {
+                            message: 'Session not found. Please check the code and try again.'
+                        }
+                    };
+                }
+
+                if (session.status !== 'active') {
+                    return {
+                        data: null,
+                        error: {
+                            message: 'This session is not currently joinable.'
+                        }
+                    };
+                }
+
+                return {
+                    data: {
+                        id: session.id,
+                        name: session.name,
+                        session_code: session.session_code || session.metadata?.session_code || normalizedCode,
+                        status: session.status
+                    },
+                    error: null
+                };
+            }
+
+            return { data: null, error: null };
+        },
         auth: {
             async getSession() {
+                const session = readMockAuthSession();
                 return {
-                    data: { session: null },
+                    data: { session },
+                    error: null
+                };
+            },
+            async signInAnonymously(credentials = {}) {
+                const timestamp = Date.now();
+                const session = {
+                    access_token: `mock_access_${timestamp}`,
+                    refresh_token: `mock_refresh_${timestamp}`,
+                    expires_at: Math.floor(timestamp / 1000) + 3600,
+                    token_type: 'bearer',
+                    user: {
+                        id: `anon_${timestamp}`,
+                        is_anonymous: true,
+                        user_metadata: cloneValue(credentials?.options?.data || {})
+                    }
+                };
+
+                writeMockAuthSession(session);
+
+                return {
+                    data: {
+                        session,
+                        user: session.user
+                    },
                     error: null
                 };
             }

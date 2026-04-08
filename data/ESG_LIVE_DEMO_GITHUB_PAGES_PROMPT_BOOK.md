@@ -228,7 +228,7 @@ npm run build
 npm test -- --run
 npm run test:e2e
 ```
-
+Completed 7 April
 ---
 
 ## Prompt 2 - Split public participant access from operator-only surfaces
@@ -275,7 +275,7 @@ When done, summarize:
 npm run build
 npm test -- --run
 ```
-
+Completed 7 April
 ---
 
 ## Prompt 3 - Replace browser-side session discovery with secure session-code join
@@ -319,7 +319,7 @@ When done, summarize:
 npm run build
 npm test -- --run
 ```
-
+Completed 7 April
 ---
 
 ## Prompt 4 - Harden role claiming, seat limits, and disconnect recovery for live capacity

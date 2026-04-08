@@ -10,13 +10,14 @@ import {
     isValidSupabaseUrl,
     validateConfig
 } from '../core/config.js';
-import { ConfigurationError } from '../core/errors.js';
+import { AuthError, ConfigurationError } from '../core/errors.js';
 import { createLogger } from '../utils/logger.js';
 import { createE2EMockSupabaseClient, isE2EMockEnabled } from './supabaseMock.js';
 
 const logger = createLogger('Supabase');
 const RUNTIME_NOTICE_ID = 'runtimeConfigNotice';
 const RUNTIME_NOTICE_STYLE_ID = 'runtime-config-notice-style';
+const SUPABASE_AUTH_STORAGE_KEY = 'esg-simulation-auth';
 
 let validation = validateConfig();
 let initializationError = null;
@@ -203,8 +204,10 @@ if (e2eMockEnabled) {
             CONFIG.SUPABASE_ANON_KEY,
             {
                 auth: {
-                    persistSession: false,
-                    autoRefreshToken: false
+                    persistSession: true,
+                    autoRefreshToken: true,
+                    detectSessionInUrl: false,
+                    storageKey: SUPABASE_AUTH_STORAGE_KEY
                 },
                 realtime: {
                     params: {
@@ -228,6 +231,51 @@ if (e2eMockEnabled) {
 }
 
 export const supabase = rawSupabaseClient || createUnavailableSupabaseClient();
+
+/**
+ * Establish a real Supabase identity before any public join or browser write path.
+ * GitHub Pages cannot safely hold a privileged server secret, so anonymous auth is the
+ * lowest-friction browser bootstrap we can use before calling authenticated RPCs.
+ */
+export async function ensureBrowserIdentity({ clientId = null } = {}) {
+    if (!rawSupabaseClient) {
+        throw createConfigurationError();
+    }
+
+    const { data: sessionData, error: sessionError } = await rawSupabaseClient.auth.getSession();
+    if (sessionError) {
+        logger.error('Failed to read browser auth session:', sessionError);
+        throw new AuthError(
+            'Unable to verify browser identity. Please reload and try again.',
+            'BROWSER_IDENTITY_UNAVAILABLE'
+        );
+    }
+
+    if (sessionData?.session?.access_token && sessionData.session.user?.id) {
+        return sessionData.session;
+    }
+
+    const metadata = clientId ? { client_id: clientId } : {};
+    const { data, error } = await rawSupabaseClient.auth.signInAnonymously({
+        options: {
+            data: metadata
+        }
+    });
+
+    if (error || !data?.session?.access_token) {
+        logger.error('Failed to establish anonymous browser identity:', error);
+        throw new AuthError(
+            'Unable to establish browser identity. Enable Supabase anonymous sign-ins and try again.',
+            'BROWSER_IDENTITY_REQUIRED'
+        );
+    }
+
+    logger.info('Established anonymous browser identity', {
+        userId: data.user?.id ? `${data.user.id.substring(0, 8)}...` : null
+    });
+
+    return data.session;
+}
 
 export function checkConnection() {
     if (!rawSupabaseClient) {

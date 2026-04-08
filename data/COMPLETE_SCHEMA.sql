@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived', 'deleted')),
+    session_code TEXT,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -25,6 +26,11 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- Indexes for sessions
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_active_session_code_upper
+    ON sessions (UPPER(session_code))
+    WHERE session_code IS NOT NULL
+      AND BTRIM(session_code) <> ''
+      AND status = 'active';
 
 -- Enable RLS
 ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
@@ -34,6 +40,58 @@ CREATE POLICY "Allow all operations on sessions"
     ON sessions FOR ALL
     USING (true)
     WITH CHECK (true);
+
+-- Public participant join contract. Public clients must resolve codes via this RPC and
+-- must not enumerate sessions in the browser to discover session_code values.
+CREATE OR REPLACE FUNCTION public.lookup_joinable_session_by_code(requested_code TEXT)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    normalized_code TEXT := UPPER(BTRIM(requested_code));
+    session_row RECORD;
+BEGIN
+    IF normalized_code IS NULL OR normalized_code = '' THEN
+        RAISE EXCEPTION 'Session code is required.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    SELECT
+        s.id,
+        s.name,
+        s.status,
+        COALESCE(NULLIF(BTRIM(s.session_code), ''), UPPER(BTRIM(s.metadata->>'session_code'))) AS resolved_session_code
+    INTO session_row
+    FROM public.sessions s
+    WHERE COALESCE(NULLIF(UPPER(BTRIM(s.session_code)), ''), UPPER(BTRIM(s.metadata->>'session_code'))) = normalized_code
+    ORDER BY
+        CASE WHEN s.status = 'active' THEN 0 ELSE 1 END,
+        s.created_at DESC
+    LIMIT 1;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Session not found. Please check the code and try again.'
+            USING ERRCODE = 'P0002';
+    END IF;
+
+    IF session_row.status <> 'active' THEN
+        RAISE EXCEPTION 'This session is not currently joinable.'
+            USING ERRCODE = 'P0001';
+    END IF;
+
+    RETURN jsonb_build_object(
+        'id', session_row.id,
+        'name', session_row.name,
+        'session_code', session_row.resolved_session_code,
+        'status', session_row.status
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.lookup_joinable_session_by_code(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.lookup_joinable_session_by_code(TEXT) TO authenticated;
 
 -- ============================================================================
 -- 2. PARTICIPANTS TABLE (RESEARCH)
@@ -684,6 +742,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE rfi_action_links;
 -- ============================================================================
 
 COMMENT ON TABLE sessions IS 'Simulation session metadata and management';
+COMMENT ON COLUMN sessions.session_code IS 'Public participant join code. Public clients must resolve it through lookup_joinable_session_by_code.';
 COMMENT ON TABLE game_state IS 'Global game state (move, phase, timer) for each session';
 COMMENT ON TABLE participants IS 'RESEARCH: Participant demographics and information across sessions';
 COMMENT ON TABLE session_participants IS 'RESEARCH: Participant involvement in specific sessions';
@@ -715,6 +774,7 @@ COMMENT ON COLUMN requests.response_time_seconds IS 'RESEARCH: Time from RFI cre
 COMMENT ON COLUMN notetaker_data.dynamics_analysis IS 'JSONB containing leadership, friction_metrics, and resource_strategy';
 COMMENT ON COLUMN notetaker_data.external_factors IS 'JSONB containing alliance feedback, red activity assessment, and counter-measures';
 COMMENT ON COLUMN notetaker_data.observation_timeline IS 'JSONB array of observation objects with type (NOTE/MOMENT/QUOTE), timestamp, phase, and content';
+COMMENT ON FUNCTION public.lookup_joinable_session_by_code(TEXT) IS 'Authenticated public join RPC. Operator note: do not reintroduce browser-side session inventory listing for code-based joins.';
 
 -- ============================================================================
 -- VERIFICATION QUERIES

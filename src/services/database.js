@@ -3,7 +3,7 @@
  * CRUD operations for all database tables
  */
 
-import { getRuntimeConfigStatus, supabase } from './supabase.js';
+import { ensureBrowserIdentity, getRuntimeConfigStatus, supabase } from './supabase.js';
 import { sessionStore } from '../stores/session.js';
 import { createLogger } from '../utils/logger.js';
 import { DatabaseError, NotFoundError, fromSupabaseError } from '../core/errors.js';
@@ -17,6 +17,12 @@ import {
 } from '../core/enums.js';
 
 const logger = createLogger('Database');
+
+async function ensureAuthenticatedBrowser() {
+    return ensureBrowserIdentity({
+        clientId: sessionStore.getClientId()
+    });
+}
 
 export function getDatabaseRuntimeStatus() {
     return getRuntimeConfigStatus();
@@ -63,12 +69,17 @@ export const database = {
      * @returns {Promise<Object>} Created session
      */
     async createSession(sessionData) {
+        await ensureAuthenticatedBrowser();
         logger.debug('Creating session:', sessionData.name);
 
-        // Store session_code and description in metadata since schema only has name, status, metadata
+        const normalizedSessionCode = typeof sessionData.session_code === 'string'
+            ? sessionData.session_code.trim().toUpperCase()
+            : null;
+
+        // Persist session_code as a first-class column and mirror it into metadata for older exports.
         const metadata = {
             ...sessionData.metadata,
-            session_code: sessionData.session_code,
+            session_code: normalizedSessionCode,
             description: sessionData.description || null
         };
 
@@ -77,6 +88,7 @@ export const database = {
             .insert({
                 name: sessionData.name,
                 status: sessionData.status || 'active',
+                session_code: normalizedSessionCode,
                 metadata
             })
             .select()
@@ -99,6 +111,7 @@ export const database = {
      * @returns {Promise<Object>} Session data
      */
     async getSession(sessionId) {
+        await ensureAuthenticatedBrowser();
         const { data, error } = await supabase
             .from('sessions')
             .select('*')
@@ -120,6 +133,7 @@ export const database = {
      * @returns {Promise<Object[]>} List of sessions
      */
     async getActiveSessions() {
+        await ensureAuthenticatedBrowser();
         const { data, error } = await supabase
             .from('sessions')
             .select('*')
@@ -134,12 +148,42 @@ export const database = {
     },
 
     /**
+     * Resolve a participant-facing session code through the server-side RPC.
+     * Operator note: do not restore browser-side session listing for public joins.
+     * Public join prompts must call this contract instead of filtering getActiveSessions().
+     * @param {string} sessionCode - Participant-entered session code
+     * @returns {Promise<{id: string, name: string, session_code: string, status: string}>}
+     */
+    async lookupJoinableSessionByCode(sessionCode) {
+        await ensureAuthenticatedBrowser();
+        const normalizedCode = typeof sessionCode === 'string'
+            ? sessionCode.trim().toUpperCase()
+            : '';
+
+        const { data, error } = await supabase.rpc('lookup_joinable_session_by_code', {
+            requested_code: normalizedCode
+        });
+
+        if (error) {
+            throw fromSupabaseError(error, 'lookupJoinableSessionByCode');
+        }
+
+        return {
+            id: data?.id,
+            name: data?.name,
+            session_code: data?.session_code ?? normalizedCode,
+            status: data?.status
+        };
+    },
+
+    /**
      * Update a session
      * @param {string} sessionId - Session ID
      * @param {Object} updates - Updates to apply
      * @returns {Promise<Object>} Updated session
      */
     async updateSession(sessionId, updates) {
+        await ensureAuthenticatedBrowser();
         const { data, error } = await supabase
             .from('sessions')
             .update({
@@ -162,6 +206,7 @@ export const database = {
      * @param {string} sessionId - Session ID
      */
     async deleteSession(sessionId) {
+        await ensureAuthenticatedBrowser();
         const { error } = await supabase
             .from('sessions')
             .delete()
@@ -182,6 +227,7 @@ export const database = {
      * @returns {Promise<Object>} Created game state
      */
     async createGameState(sessionId) {
+        await ensureAuthenticatedBrowser();
         const { data, error } = await supabase
             .from('game_state')
             .insert({
@@ -208,6 +254,7 @@ export const database = {
      * @returns {Promise<Object>} Game state
      */
     async getGameState(sessionId) {
+        await ensureAuthenticatedBrowser();
         const { data, error } = await supabase
             .from('game_state')
             .select('*')
@@ -231,6 +278,7 @@ export const database = {
      * @returns {Promise<Object>} Updated game state
      */
     async updateGameState(sessionId, updates) {
+        await ensureAuthenticatedBrowser();
         // Map any legacy field names to schema field names
         const mappedUpdates = { ...updates };
 
@@ -274,6 +322,7 @@ export const database = {
      * @param {number} toValue - New value
      */
     async logTransition(sessionId, transitionType, fromValue, toValue) {
+        await ensureAuthenticatedBrowser();
         const { error } = await supabase
             .from('game_state_transitions')
             .insert({
@@ -299,6 +348,7 @@ export const database = {
      * @returns {Promise<Object>} Created session_participant record
      */
     async registerParticipant(sessionId, role, name = '') {
+        await ensureAuthenticatedBrowser();
         const clientId = sessionStore.getClientId();
 
         // Step 1: Get or create participant in participants table
@@ -406,6 +456,7 @@ export const database = {
      * @returns {Promise<Object>} Updated record
      */
     async updateParticipant(sessionId, participantId, updates) {
+        await ensureAuthenticatedBrowser();
         const { data, error } = await supabase
             .from('session_participants')
             .update(updates)
@@ -426,6 +477,7 @@ export const database = {
      * @param {string} sessionId - Session ID
      */
     async updateHeartbeat(sessionId) {
+        await ensureAuthenticatedBrowser();
         const clientId = sessionStore.getClientId();
 
         // First get the participant record by client_id
@@ -461,6 +513,7 @@ export const database = {
      * @param {string} participantId - Participant ID
      */
     async disconnectParticipant(sessionId, sessionParticipantId) {
+        await ensureAuthenticatedBrowser();
         // sessionParticipantId is the session_participants.id (record ID)
         const { error } = await supabase
             .from('session_participants')
@@ -483,6 +536,7 @@ export const database = {
      * @returns {Promise<Object[]>} Active participants with names from participants table
      */
     async getActiveParticipants(sessionId) {
+        await ensureAuthenticatedBrowser();
         const cutoff = new Date(Date.now() - 300000).toISOString(); // 5 minutes ago
 
         const { data, error } = await supabase
@@ -512,6 +566,7 @@ export const database = {
      * @returns {Promise<Object>} Availability info
      */
     async checkRoleAvailability(sessionId, role, maxAllowed) {
+        await ensureAuthenticatedBrowser();
         const cutoff = new Date(Date.now() - 300000).toISOString(); // 5 minutes ago
 
         const { data, error } = await supabase
@@ -523,15 +578,13 @@ export const database = {
             .gt('heartbeat_at', cutoff);
 
         if (error) {
-            logger.error('Role availability check failed:', error);
-            return { available: true }; // Fail open
+            throw fromSupabaseError(error, 'checkRoleAvailability');
         }
 
         return {
             available: (data?.length || 0) < maxAllowed,
             currentCount: data?.length || 0,
-            maxAllowed,
-            activeParticipants: data || []
+            maxAllowed
         };
     },
 
@@ -543,6 +596,7 @@ export const database = {
      * @returns {Promise<Object>} Created action
      */
     async createAction(actionData) {
+        await ensureAuthenticatedBrowser();
         const status = actionData.status ?? ENUMS.ACTION_STATUS.DRAFT;
         if (!isValidActionStatus(status)) {
             throw new DatabaseError(`Invalid action status: ${status}`, 'createAction');
@@ -648,6 +702,7 @@ export const database = {
      * @returns {Promise<Object>} Updated action
      */
     async updateAction(actionId, updates) {
+        await ensureAuthenticatedBrowser();
         if ('status' in updates && !isValidActionStatus(updates.status)) {
             throw new DatabaseError(`Invalid action status: ${updates.status}`, 'updateAction');
         }
@@ -738,6 +793,7 @@ export const database = {
      * @param {string} actionId - Action ID
      */
     async deleteAction(actionId) {
+        await ensureAuthenticatedBrowser();
         const { error } = await supabase
             .from('actions')
             .update({
@@ -775,6 +831,7 @@ export const database = {
      * @returns {Promise<Object>} Created request
      */
     async createRequest(requestData) {
+        await ensureAuthenticatedBrowser();
         const query = requestData.query ?? requestData.question ?? null;
         const { data, error } = await supabase
             .from('requests')
@@ -841,6 +898,7 @@ export const database = {
      * @returns {Promise<Object>} Updated request
      */
     async updateRequest(requestId, updates) {
+        await ensureAuthenticatedBrowser();
         const { data, error } = await supabase
             .from('requests')
             .update(updates)
@@ -863,6 +921,7 @@ export const database = {
      * @returns {Promise<Object>} Created communication
      */
     async createCommunication(commData) {
+        await ensureAuthenticatedBrowser();
         const { data, error } = await supabase
             .from('communications')
             .insert({
@@ -911,6 +970,7 @@ export const database = {
      * @returns {Promise<Object>} Created event
      */
     async createTimelineEvent(eventData) {
+        await ensureAuthenticatedBrowser();
         const rawMetadata = eventData.metadata && typeof eventData.metadata === 'object'
             ? { ...eventData.metadata }
             : null;
@@ -1022,6 +1082,7 @@ export const database = {
      * @returns {Promise<Object>} Saved data
      */
     async saveNotetakerData(noteData) {
+        await ensureAuthenticatedBrowser();
         const timestamp = new Date().toISOString();
         const { data: existing, error: existingError } = await supabase
             .from('notetaker_data')
