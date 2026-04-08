@@ -12,6 +12,7 @@ import { createLogger } from './utils/logger.js';
 import { showToast } from './components/ui/Toast.js';
 import { hideLoader } from './components/ui/Loader.js';
 import { ConfigurationError } from './core/errors.js';
+import { CONFIG } from './core/config.js';
 import { buildAppPath, isLandingPage, navigateToApp } from './core/navigation.js';
 
 const logger = createLogger('Main');
@@ -19,6 +20,8 @@ const runtimeConfigStatus = getRuntimeConfigStatus();
 
 // Heartbeat interval reference
 let heartbeatInterval = null;
+let disconnectKeepaliveHandler = null;
+let suppressDisconnectKeepalive = false;
 
 /**
  * Initialize the application
@@ -128,9 +131,10 @@ function setupLogoutHandler() {
 
         // Mark participant as inactive
         const sessionId = sessionStore.getSessionId();
-        const participantId = sessionStore.getSessionData()?.participantId;
+        const participantId = sessionStore.getSessionParticipantId?.() || sessionStore.getSessionData()?.participantId;
         if (sessionId && participantId) {
             try {
+                suppressDisconnectKeepalive = true;
                 await database.disconnectParticipant(sessionId, participantId);
             } catch (err) {
                 logger.error('Failed to disconnect participant:', err);
@@ -151,9 +155,10 @@ function setupLogoutHandler() {
 async function startHeartbeat() {
     const sessionId = sessionStore.getSessionId();
     const sessionData = sessionStore.getSessionData();
+    const participantId = sessionStore.getSessionParticipantId?.() || sessionData?.participantId;
 
     // Only start heartbeat if we have a valid session and are not on landing page
-    if (!sessionId || !sessionData?.participantId) {
+    if (!sessionId || !participantId) {
         logger.debug('No active session, skipping heartbeat');
         return;
     }
@@ -167,7 +172,7 @@ async function startHeartbeat() {
 
     // Send initial heartbeat immediately
     try {
-        await database.updateHeartbeat(sessionId);
+        await database.updateHeartbeat(sessionId, participantId);
         logger.debug('Initial heartbeat sent');
     } catch (err) {
         logger.error('Initial heartbeat failed:', err);
@@ -176,18 +181,24 @@ async function startHeartbeat() {
     // Set up interval for regular heartbeats (every 30 seconds)
     heartbeatInterval = setInterval(async () => {
         try {
-            await database.updateHeartbeat(sessionId);
+            await database.updateHeartbeat(sessionId, participantId);
             logger.debug('Heartbeat sent');
         } catch (err) {
             logger.error('Heartbeat failed:', err);
         }
-    }, 30000);
+    }, CONFIG.HEARTBEAT_INTERVAL_MS);
 
-    // Also send heartbeat before page unload
-    window.addEventListener('beforeunload', () => {
-        // Try to send a final heartbeat (may not complete)
-        navigator.sendBeacon && navigator.sendBeacon(buildAppPath('api/heartbeat'));
-    });
+    if (disconnectKeepaliveHandler) {
+        window.removeEventListener('pagehide', disconnectKeepaliveHandler);
+    }
+
+    disconnectKeepaliveHandler = () => {
+        if (!suppressDisconnectKeepalive) {
+            void database.disconnectParticipantKeepalive(sessionId, participantId);
+        }
+    };
+
+    window.addEventListener('pagehide', disconnectKeepaliveHandler);
 }
 
 /**
@@ -198,6 +209,11 @@ function stopHeartbeat() {
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
         logger.info('Heartbeat stopped');
+    }
+
+    if (disconnectKeepaliveHandler) {
+        window.removeEventListener('pagehide', disconnectKeepaliveHandler);
+        disconnectKeepaliveHandler = null;
     }
 }
 

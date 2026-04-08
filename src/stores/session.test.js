@@ -161,6 +161,8 @@ describe('sessionStore snapshot model', () => {
             timer_seconds: 5400,
             timer_running: true
         });
+        expect(latestSnapshot.role).toBe('blue_whitecell_lead');
+        expect(latestSnapshot.sessionData.role).toBe('blue_whitecell_lead');
     });
 
     it('rehydrates cached session data on a fresh module load', async () => {
@@ -196,6 +198,7 @@ describe('sessionStore snapshot model', () => {
                 role: 'viewer',
                 displayName: 'Observer',
                 participantId: 'participant-1',
+                participantSessionId: 'participant-1',
                 gameState: {
                     move: 3,
                     phase: 4,
@@ -221,12 +224,12 @@ describe('sessionStore snapshot model', () => {
         expect(module.sessionStore.hasOperatorAccess('whitecell', {
             sessionId: 'session-operator',
             teamId: 'blue',
-            role: 'blue_whitecell'
+            role: 'blue_whitecell_lead'
         })).toBe(true);
         expect(module.sessionStore.hasOperatorAccess('whitecell', {
             sessionId: 'session-operator',
             teamId: 'red',
-            role: 'blue_whitecell'
+            role: 'blue_whitecell_lead'
         })).toBe(false);
         expect(module.sessionStore.hasOperatorAccess('gamemaster', {
             role: 'white'
@@ -239,7 +242,7 @@ describe('sessionStore snapshot model', () => {
             sessionId: 'session-operator',
             sessionCode: 'ALPHA-2026',
             teamId: 'blue',
-            role: 'blue_whitecell',
+            role: 'blue_whitecell_lead',
             operatorName: 'White Cell Lead'
         });
     });

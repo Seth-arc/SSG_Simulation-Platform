@@ -567,10 +567,10 @@
             100% { width: 100%; }
         }
     </style>
-  <script type="module" crossorigin src="/assets/main-BvgMM3H1.js"></script>
+  <script type="module" crossorigin src="/assets/main-DK5FUXhd.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/supabase-BQbgwcOn.js">
-  <link rel="modulepreload" crossorigin href="/assets/main-Bg90-60U.js">
-  <link rel="modulepreload" crossorigin href="/assets/validation-BIrUJXWe.js">
+  <link rel="modulepreload" crossorigin href="/assets/main-cXAX-ZC1.js">
+  <link rel="modulepreload" crossorigin href="/assets/validation-7YAxr0ZD.js">
   <link rel="stylesheet" crossorigin href="/assets/main-BIPW7hAd.css">
   <link rel="stylesheet" crossorigin href="/assets/loader-cvd1K-Uc.css">
   <link rel="stylesheet" crossorigin href="/assets/grid-DxNJswXH.css">
@@ -617,6 +617,7 @@
                     <h1 class="landing-title">Strategic Economic Competition</h1>
                     <p class="landing-description">
                         Public participants join by session code as Facilitator, Notetaker, or Observer.
+                        Live-demo seats per team are 1 facilitator, 4 notetakers, and 5 read-only observers.
                         White Cell and Game Master use operator-only access.
                     </p>
                 </div>
@@ -624,7 +625,7 @@
                 <div class="session-card">
                     <div class="card-header">
                         <h2 class="card-title">Public Participant Join</h2>
-                        <p class="card-subtitle">Session-code access is limited to Facilitator, Notetaker, and Observer.</p>
+                        <p class="card-subtitle">Session-code access is limited to Facilitator, Notetaker, and Observer seats.</p>
                     </div>
 
                     <!-- Resume Section (shown if active session exists) -->
@@ -680,7 +681,7 @@
                                         </svg>
                                     </div>
                                     <span class="role-name">Facilitator</span>
-                                    <span class="role-desc">Create and submit team actions</span>
+                                    <span class="role-desc">1 seat per team for live action leadership</span>
                                 </button>
 
                                 <button type="button" class="role-option" data-role-surface="notetaker" aria-pressed="false">
@@ -695,7 +696,7 @@
                                         </svg>
                                     </div>
                                     <span class="role-name">Notetaker</span>
-                                    <span class="role-desc">Capture observations and move notes</span>
+                                    <span class="role-desc">4 seats per team for concurrent note capture</span>
                                 </button>
 
                                 <button type="button" class="role-option" data-role-surface="viewer" aria-pressed="false">
@@ -707,7 +708,7 @@
                                         </svg>
                                     </div>
                                     <span class="role-name">Observer</span>
-                                    <span class="role-desc">Read-only facilitator view for the selected team</span>
+                                    <span class="role-desc">5 read-only seats for the selected team view</span>
                                 </button>
                             </div>
                             <input type="hidden" id="selectedRole" name="role">
@@ -719,18 +720,19 @@
                     <section class="operator-access" id="operatorAccessSection" aria-labelledby="operatorAccessTitle">
                         <h2 class="card-title" id="operatorAccessTitle">Operator Access</h2>
                         <p class="operator-copy">
-                            White Cell and Game Master are not public session-code seats. Enter the operator access code to open those surfaces.
+                            White Cell and Game Master are not public session-code seats. Enter the operator access code to claim the explicit operator surfaces below.
                         </p>
                         <div class="form-group">
                             <label class="form-label" for="operatorAccessCode">Operator Access Code</label>
                             <input type="password" id="operatorAccessCode" class="form-input" autocomplete="current-password">
                         </div>
                         <div class="operator-actions">
-                            <button type="button" class="btn btn-outline" id="operatorWhiteCellBtn">Open White Cell</button>
+                            <button type="button" class="btn btn-outline" id="operatorWhiteCellLeadBtn">Open White Cell Lead</button>
+                            <button type="button" class="btn btn-outline" id="operatorWhiteCellSupportBtn">Open White Cell Support</button>
                             <button type="button" class="btn btn-outline" id="operatorGameMasterBtn">Open Game Master</button>
                         </div>
                         <p class="operator-access-note">
-                            White Cell uses the session code and selected team above. Game Master access is operator-only and not claimable through public join.
+                            White Cell lead and support are separate seats. White Cell uses the session code and selected team above. Game Master access is operator-only and not claimable through public join.
                         </p>
                     </section>
                     </div>

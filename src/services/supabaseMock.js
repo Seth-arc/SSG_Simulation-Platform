@@ -261,6 +261,323 @@ function shapeSelectedRows(tableName, rows, selectClause, state) {
     });
 }
 
+function normalizeSeatRole(role = '') {
+    return /^(blue|red|green)_whitecell$/.test(role)
+        ? role.replace(/_whitecell$/, '_whitecell_lead')
+        : role;
+}
+
+function getSessionRoleSeatLimit(role = '') {
+    const normalizedRole = normalizeSeatRole(role);
+
+    if (/^(blue|red|green)_facilitator$/.test(normalizedRole)) {
+        return 1;
+    }
+    if (/^(blue|red|green)_notetaker$/.test(normalizedRole)) {
+        return 4;
+    }
+    if (normalizedRole === 'viewer') {
+        return 5;
+    }
+    if (/^(blue|red|green)_whitecell(_lead)?$/.test(normalizedRole)) {
+        return 1;
+    }
+    if (/^(blue|red|green)_whitecell_support$/.test(normalizedRole)) {
+        return 1;
+    }
+    if (normalizedRole === 'white') {
+        return 1;
+    }
+
+    return null;
+}
+
+function releaseStaleSessionRoleSeats(state, sessionId, timeoutSeconds = 90) {
+    const cutoff = Date.now() - (Math.max(timeoutSeconds, 1) * 1000);
+    let releasedCount = 0;
+
+    state.tables.session_participants = state.tables.session_participants.map((seat) => {
+        if (seat.session_id !== sessionId || seat.is_active !== true) {
+            return seat;
+        }
+
+        const lastSeen = new Date(seat.heartbeat_at || seat.last_seen || seat.joined_at || 0).getTime();
+        if (Number.isNaN(lastSeen) || lastSeen >= cutoff) {
+            return seat;
+        }
+
+        releasedCount += 1;
+        return {
+            ...seat,
+            is_active: false,
+            disconnected_at: seat.disconnected_at || getTimestamp(),
+            left_at: seat.left_at || getTimestamp(),
+            last_seen: seat.last_seen || seat.heartbeat_at || seat.joined_at || getTimestamp()
+        };
+    });
+
+    return releasedCount;
+}
+
+function buildParticipantSeatPayload(state, seat) {
+    if (!seat) {
+        return null;
+    }
+
+    const participant = state.tables.participants.find((entry) => entry.id === seat.participant_id);
+
+    return {
+        ...cloneValue(seat),
+        display_name: participant?.name ?? 'Unknown',
+        client_id: participant?.client_id ?? null
+    };
+}
+
+function claimSessionRoleSeat(state, {
+    requested_session_id,
+    requested_role,
+    requested_name,
+    requested_client_id,
+    requested_timeout_seconds = 90
+}) {
+    const normalizedRole = normalizeSeatRole(String(requested_role || '').trim());
+    const normalizedName = String(requested_name || '').trim() || null;
+    const normalizedClientId = String(requested_client_id || '').trim();
+    const roleLimit = getSessionRoleSeatLimit(normalizedRole);
+
+    if (!requested_session_id) {
+        return { data: null, error: { message: 'Session ID is required.' } };
+    }
+    if (!normalizedRole) {
+        return { data: null, error: { message: 'Role is required.' } };
+    }
+    if (!normalizedClientId) {
+        return { data: null, error: { message: 'Client identity is required.' } };
+    }
+    if (!roleLimit) {
+        return { data: null, error: { message: 'This role cannot be claimed in the live demo.' } };
+    }
+
+    const session = state.tables.sessions.find((entry) => entry.id === requested_session_id);
+    if (!session || session.status !== 'active') {
+        return { data: null, error: { message: 'This session is not currently joinable.' } };
+    }
+
+    releaseStaleSessionRoleSeats(state, requested_session_id, requested_timeout_seconds);
+
+    let participant = state.tables.participants.find((entry) => entry.client_id === normalizedClientId);
+    if (!participant) {
+        participant = normalizeInsertRow('participants', {
+            client_id: normalizedClientId,
+            name: normalizedName,
+            role: normalizedRole
+        }, state);
+        state.tables.participants.push(participant);
+    } else {
+        participant = {
+            ...participant,
+            name: normalizedName ?? participant.name ?? null,
+            role: normalizedRole,
+            updated_at: getTimestamp()
+        };
+        state.tables.participants = state.tables.participants.map((entry) => (
+            entry.id === participant.id ? participant : entry
+        ));
+    }
+
+    const existingSeat = state.tables.session_participants.find((entry) => (
+        entry.session_id === requested_session_id && entry.participant_id === participant.id
+    )) || null;
+
+    const activeClaimCount = state.tables.session_participants.filter((entry) => (
+        entry.session_id === requested_session_id &&
+        entry.role === normalizedRole &&
+        entry.is_active === true &&
+        (!existingSeat || entry.id !== existingSeat.id)
+    )).length;
+
+    if (activeClaimCount >= roleLimit) {
+        return {
+            data: null,
+            error: { message: 'The requested role is full. Please choose another seat.' }
+        };
+    }
+
+    let seat = existingSeat;
+    let claimStatus = 'claimed';
+    const now = getTimestamp();
+
+    if (!seat) {
+        seat = normalizeInsertRow('session_participants', {
+            session_id: requested_session_id,
+            participant_id: participant.id,
+            role: normalizedRole,
+            is_active: true,
+            heartbeat_at: now,
+            joined_at: now,
+            last_seen: now,
+            disconnected_at: null,
+            left_at: null
+        }, state);
+        state.tables.session_participants.push(seat);
+    } else {
+        claimStatus = seat.is_active && seat.role === normalizedRole
+            ? 'refreshed'
+            : (seat.role === normalizedRole ? 'rejoined' : 'reassigned');
+        seat = {
+            ...seat,
+            role: normalizedRole,
+            is_active: true,
+            heartbeat_at: now,
+            last_seen: now,
+            disconnected_at: null,
+            left_at: null,
+            updated_at: now
+        };
+        state.tables.session_participants = state.tables.session_participants.map((entry) => (
+            entry.id === seat.id ? seat : entry
+        ));
+    }
+
+    return {
+        data: {
+            ...buildParticipantSeatPayload(state, seat),
+            seat_limit: roleLimit,
+            active_count: activeClaimCount + 1,
+            claim_status: claimStatus
+        },
+        error: null
+    };
+}
+
+function heartbeatSessionRoleSeat(state, {
+    requested_session_id,
+    requested_session_participant_id,
+    requested_client_id,
+    requested_timeout_seconds = 90
+}) {
+    if (!requested_session_id || !requested_session_participant_id) {
+        return {
+            data: null,
+            error: { message: 'A claimed seat is required to send heartbeats.' }
+        };
+    }
+
+    releaseStaleSessionRoleSeats(state, requested_session_id, requested_timeout_seconds);
+
+    const seat = state.tables.session_participants.find((entry) => (
+        entry.id === requested_session_participant_id && entry.session_id === requested_session_id
+    ));
+    const participant = seat
+        ? state.tables.participants.find((entry) => entry.id === seat.participant_id)
+        : null;
+
+    if (!seat || !participant || (requested_client_id && participant.client_id !== requested_client_id)) {
+        return {
+            data: null,
+            error: { message: 'Participant seat not found. Please rejoin the session.' }
+        };
+    }
+
+    if (seat.is_active !== true) {
+        const roleLimit = getSessionRoleSeatLimit(seat.role) || 1;
+        const activeClaimCount = state.tables.session_participants.filter((entry) => (
+            entry.session_id === requested_session_id &&
+            entry.role === seat.role &&
+            entry.is_active === true &&
+            entry.id !== seat.id
+        )).length;
+
+        if (activeClaimCount >= roleLimit) {
+            return {
+                data: null,
+                error: { message: 'This seat is no longer available. Please rejoin the session.' }
+            };
+        }
+    }
+
+    const now = getTimestamp();
+    const updatedSeat = {
+        ...seat,
+        is_active: true,
+        heartbeat_at: now,
+        last_seen: now,
+        disconnected_at: null,
+        left_at: null,
+        updated_at: now
+    };
+
+    state.tables.session_participants = state.tables.session_participants.map((entry) => (
+        entry.id === updatedSeat.id ? updatedSeat : entry
+    ));
+
+    return {
+        data: buildParticipantSeatPayload(state, updatedSeat),
+        error: null
+    };
+}
+
+function disconnectSessionRoleSeat(state, {
+    requested_session_id,
+    requested_session_participant_id,
+    requested_client_id,
+    requested_timeout_seconds = 90
+}) {
+    if (!requested_session_id || !requested_session_participant_id) {
+        return { data: null, error: null };
+    }
+
+    releaseStaleSessionRoleSeats(state, requested_session_id, requested_timeout_seconds);
+
+    const seat = state.tables.session_participants.find((entry) => (
+        entry.id === requested_session_participant_id && entry.session_id === requested_session_id
+    ));
+    const participant = seat
+        ? state.tables.participants.find((entry) => entry.id === seat.participant_id)
+        : null;
+
+    if (!seat || !participant || (requested_client_id && participant.client_id !== requested_client_id)) {
+        return { data: null, error: null };
+    }
+
+    const now = getTimestamp();
+    const updatedSeat = {
+        ...seat,
+        is_active: false,
+        disconnected_at: now,
+        left_at: seat.left_at || now,
+        last_seen: seat.last_seen || now,
+        updated_at: now
+    };
+
+    state.tables.session_participants = state.tables.session_participants.map((entry) => (
+        entry.id === updatedSeat.id ? updatedSeat : entry
+    ));
+
+    return {
+        data: buildParticipantSeatPayload(state, updatedSeat),
+        error: null
+    };
+}
+
+function listActiveSessionParticipants(state, {
+    requested_session_id,
+    requested_timeout_seconds = 90
+}) {
+    if (!requested_session_id) {
+        return { data: [], error: null };
+    }
+
+    releaseStaleSessionRoleSeats(state, requested_session_id, requested_timeout_seconds);
+
+    return {
+        data: state.tables.session_participants
+            .filter((entry) => entry.session_id === requested_session_id && entry.is_active === true)
+            .map((entry) => buildParticipantSeatPayload(state, entry)),
+        error: null
+    };
+}
+
 class MockQueryBuilder {
     constructor(tableName) {
         this.tableName = tableName;
@@ -532,6 +849,48 @@ export function createE2EMockSupabaseClient() {
                     },
                     error: null
                 };
+            }
+
+            if (functionName === 'claim_session_role_seat') {
+                const state = readMockState();
+                const result = claimSessionRoleSeat(state, params);
+                writeMockState(state);
+                return result;
+            }
+
+            if (functionName === 'heartbeat_session_role_seat') {
+                const state = readMockState();
+                const result = heartbeatSessionRoleSeat(state, params);
+                writeMockState(state);
+                return result;
+            }
+
+            if (functionName === 'disconnect_session_role_seat') {
+                const state = readMockState();
+                const result = disconnectSessionRoleSeat(state, params);
+                writeMockState(state);
+                return result;
+            }
+
+            if (functionName === 'release_stale_session_role_seats') {
+                const state = readMockState();
+                const released = releaseStaleSessionRoleSeats(
+                    state,
+                    params?.requested_session_id,
+                    params?.requested_timeout_seconds ?? 90
+                );
+                writeMockState(state);
+                return {
+                    data: released,
+                    error: null
+                };
+            }
+
+            if (functionName === 'list_active_session_participants') {
+                const state = readMockState();
+                const result = listActiveSessionParticipants(state, params);
+                writeMockState(state);
+                return result;
             }
 
             return { data: null, error: null };

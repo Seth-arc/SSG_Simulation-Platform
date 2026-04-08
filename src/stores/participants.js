@@ -12,7 +12,7 @@
 import { database } from '../services/database.js';
 import { sessionStore } from './session.js';
 import { createLogger } from '../utils/logger.js';
-import { CONFIG } from '../core/config.js';
+import { CONFIG, getRoleLimit, isHeartbeatFresh } from '../core/config.js';
 
 const logger = createLogger('ParticipantsStore');
 
@@ -71,7 +71,7 @@ class ParticipantsStore {
         }
 
         this.sessionId = sessionId;
-        this.currentParticipantId = participantId;
+        this.currentParticipantId = participantId || sessionStore.getSessionParticipantId?.() || null;
         logger.info('Initializing participants store for session:', sessionId);
 
         try {
@@ -128,17 +128,9 @@ class ParticipantsStore {
      * @returns {Participant[]}
      */
     getActive() {
-        const cutoffTime = Date.now() - (CONFIG.HEARTBEAT_INTERVAL_MS * 3);
-
-        return this.participants.filter(p => {
-            if (!p.is_active) return false;
-
-            const heartbeatTime = p.heartbeat_at;
-            if (!heartbeatTime) return false;
-
-            const lastHeartbeat = new Date(heartbeatTime).getTime();
-            return lastHeartbeat > cutoffTime;
-        });
+        return this.participants.filter((participant) => (
+            participant.is_active && isHeartbeatFresh(participant.heartbeat_at)
+        ));
     }
 
     /**
@@ -183,7 +175,7 @@ class ParticipantsStore {
      * @returns {boolean}
      */
     isRoleAvailable(role) {
-        const limit = CONFIG.ROLE_LIMITS[role] || 999;
+        const limit = getRoleLimit(role);
         const activeCount = this.getActiveByRole(role).length;
         return activeCount < limit;
     }
@@ -229,18 +221,21 @@ class ParticipantsStore {
             throw new Error('Store not initialized');
         }
 
-        // Check role availability
-        if (!this.isRoleAvailable(role)) {
-            throw new Error(`Role "${role}" is not available`);
-        }
-
         logger.info('Joining session as:', role);
 
         try {
-            // Use database.registerParticipant which creates both participant and session_participant records
-            const data = await database.registerParticipant(this.sessionId, role, displayName);
+            const data = await database.claimParticipantSeat(this.sessionId, role, displayName);
 
-            this.participants.push(data);
+            const existingIndex = this.participants.findIndex((participant) => participant.id === data.id);
+            if (existingIndex === -1) {
+                this.participants.push(data);
+            } else {
+                this.participants[existingIndex] = {
+                    ...this.participants[existingIndex],
+                    ...data
+                };
+            }
+
             // Store the session_participant id, not the participant id
             this.currentParticipantId = data.id;
 
@@ -327,15 +322,17 @@ class ParticipantsStore {
         try {
             const now = new Date().toISOString();
 
-            // updateHeartbeat uses sessionStore.getClientId() internally to find the participant
-            await database.updateHeartbeat(this.sessionId);
+            const updatedSeat = await database.updateHeartbeat(this.sessionId, this.currentParticipantId);
 
             // Update local state
             const participant = this.getById(this.currentParticipantId);
             if (participant) {
-                participant.heartbeat_at = now;
-                participant.last_seen = now;
-                participant.is_active = true;
+                Object.assign(participant, {
+                    ...updatedSeat,
+                    heartbeat_at: updatedSeat?.heartbeat_at || now,
+                    last_seen: updatedSeat?.last_seen || now,
+                    is_active: true
+                });
             }
 
             logger.debug('Heartbeat sent');
@@ -388,7 +385,7 @@ class ParticipantsStore {
         // Clean up every minute
         this.cleanupInterval = setInterval(() => {
             this.markInactiveParticipants();
-        }, 60000);
+        }, CONFIG.PRESENCE_CLEANUP_INTERVAL_MS);
     }
 
     /**
@@ -396,17 +393,11 @@ class ParticipantsStore {
      * @private
      */
     markInactiveParticipants() {
-        const cutoffTime = Date.now() - (CONFIG.HEARTBEAT_INTERVAL_MS * 3);
         let changed = false;
 
         this.participants.forEach(participant => {
             if (participant.is_active) {
-                const heartbeatTime = participant.heartbeat_at;
-                if (!heartbeatTime) return;
-
-                const lastHeartbeat = new Date(heartbeatTime).getTime();
-
-                if (lastHeartbeat < cutoffTime) {
+                if (!isHeartbeatFresh(participant.heartbeat_at)) {
                     participant.is_active = false;
                     changed = true;
                     logger.debug('Marked participant inactive:', participant.id);

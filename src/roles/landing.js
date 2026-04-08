@@ -17,9 +17,11 @@ import { navigateToApp } from '../core/navigation.js';
 import {
     OPERATOR_SURFACES,
     TEAM_OPTIONS,
+    WHITE_CELL_OPERATOR_ROLES,
     isPublicRoleSurface,
     ROLE_SURFACES,
     buildTeamRole,
+    buildWhiteCellOperatorRole,
     getRoleDisplayName,
     getRoleRoute,
     parseTeamRole
@@ -86,9 +88,25 @@ export class LandingController {
             void this.handleOperatorAccess(OPERATOR_SURFACES.GAME_MASTER);
         });
 
-        const whiteCellAccessBtn = document.getElementById('operatorWhiteCellBtn');
-        whiteCellAccessBtn?.addEventListener('click', () => {
-            void this.handleOperatorAccess(OPERATOR_SURFACES.WHITE_CELL);
+        const whiteCellLeadAccessBtn = document.getElementById('operatorWhiteCellLeadBtn');
+        whiteCellLeadAccessBtn?.addEventListener('click', () => {
+            void this.handleOperatorAccess(OPERATOR_SURFACES.WHITE_CELL, {
+                operatorRole: WHITE_CELL_OPERATOR_ROLES.LEAD
+            });
+        });
+
+        const whiteCellSupportAccessBtn = document.getElementById('operatorWhiteCellSupportBtn');
+        whiteCellSupportAccessBtn?.addEventListener('click', () => {
+            void this.handleOperatorAccess(OPERATOR_SURFACES.WHITE_CELL, {
+                operatorRole: WHITE_CELL_OPERATOR_ROLES.SUPPORT
+            });
+        });
+
+        const legacyWhiteCellAccessBtn = document.getElementById('operatorWhiteCellBtn');
+        legacyWhiteCellAccessBtn?.addEventListener('click', () => {
+            void this.handleOperatorAccess(OPERATOR_SURFACES.WHITE_CELL, {
+                operatorRole: WHITE_CELL_OPERATOR_ROLES.LEAD
+            });
         });
 
         // Leave session button (if shown)
@@ -271,15 +289,7 @@ export class LandingController {
             // Check role availability
             const parsedRole = parseTeamRole(this.selectedRole);
             const participantTeam = parsedRole.teamId || this.selectedTeam;
-            const roleLimit = CONFIG.ROLE_LIMITS[this.selectedRole] || 999;
-            const availability = await database.checkRoleAvailability(session.id, this.selectedRole, roleLimit);
-
-            if (!availability.available) {
-                throw new Error(`The ${getRoleDisplayName(this.selectedRole, { observerTeamId: participantTeam })} role is full. Please choose another role.`);
-            }
-
-            // Create participant record
-            const participant = await database.registerParticipant(session.id, this.selectedRole, displayName);
+            const participant = await database.claimParticipantSeat(session.id, this.selectedRole, displayName);
 
             // Store session data
             sessionStore.clearOperatorAuth();
@@ -291,10 +301,12 @@ export class LandingController {
                 name: session.name,
                 code: sessionCodeFromLookup,
                 participantId: participant.id,
+                participantSessionId: participant.id,
                 role: this.selectedRole,
                 displayName,
                 team: participantTeam,
-                roleSurface: this.selectedRoleSurface
+                roleSurface: this.selectedRoleSurface,
+                seatClaimStatus: participant.claim_status || 'claimed'
             });
 
             // Load game state
@@ -321,7 +333,7 @@ export class LandingController {
         }
     }
 
-    async handleOperatorAccess(surface) {
+    async handleOperatorAccess(surface, { operatorRole = WHITE_CELL_OPERATOR_ROLES.LEAD } = {}) {
         const operatorCodeInput = document.getElementById('operatorAccessCode');
         const operatorCode = operatorCodeInput?.value?.trim();
 
@@ -346,7 +358,7 @@ export class LandingController {
                 return;
             }
 
-            await this.authorizeWhiteCell();
+            await this.authorizeWhiteCell(operatorRole);
         } catch (err) {
             logger.error('Failed to authorize operator access:', err);
             showToast({
@@ -387,11 +399,11 @@ export class LandingController {
         navigateToApp('master.html');
     }
 
-    async authorizeWhiteCell() {
+    async authorizeWhiteCell(operatorRole = WHITE_CELL_OPERATOR_ROLES.LEAD) {
         const codeInput = document.getElementById('sessionCode');
         const sessionCode = codeInput?.value?.trim().toUpperCase();
         const operatorName = document.getElementById('displayName')?.value?.trim()
-            || `${getRoleDisplayName(buildTeamRole(this.selectedTeam, ROLE_SURFACES.WHITECELL))} Operator`;
+            || getRoleDisplayName(buildWhiteCellOperatorRole(this.selectedTeam, operatorRole));
 
         const codeError = validateSessionCode(sessionCode);
         if (codeError) {
@@ -403,7 +415,8 @@ export class LandingController {
         await this.prewarmBrowserIdentity({ interactive: true });
         const session = await this.findSessionByCode(sessionCode);
         const sessionCodeFromLookup = session.session_code || sessionCode;
-        const whiteCellRole = buildTeamRole(this.selectedTeam, ROLE_SURFACES.WHITECELL);
+        const whiteCellRole = buildWhiteCellOperatorRole(this.selectedTeam, operatorRole);
+        const participant = await database.claimParticipantSeat(session.id, whiteCellRole, operatorName);
 
         sessionStore.clear();
         sessionStore.setSessionId(session.id);
@@ -413,12 +426,14 @@ export class LandingController {
             id: session.id,
             name: session.name,
             code: sessionCodeFromLookup,
-            participantId: null,
+            participantId: participant.id,
+            participantSessionId: participant.id,
             role: whiteCellRole,
             displayName: operatorName,
             team: this.selectedTeam,
             roleSurface: ROLE_SURFACES.WHITECELL,
-            operatorMode: true
+            operatorMode: true,
+            seatClaimStatus: participant.claim_status || 'claimed'
         });
         sessionStore.setOperatorAuth({
             surface: OPERATOR_SURFACES.WHITE_CELL,
@@ -460,7 +475,7 @@ export class LandingController {
      * Leave current session
      */
     async leaveSession() {
-        const participantId = sessionStore.getSessionData()?.participantId;
+        const participantId = sessionStore.getSessionParticipantId?.() || sessionStore.getSessionData()?.participantId;
 
         // Mark participant as inactive
         if (participantId) {

@@ -9,7 +9,7 @@ import { participantsStore } from '../../stores/index.js';
 import { createBadge } from '../../components/ui/Badge.js';
 import { showInlineLoader } from '../../components/ui/Loader.js';
 import { formatRelativeTime } from '../../utils/formatting.js';
-import { CONFIG } from '../../core/config.js';
+import { getRoleLimit } from '../../core/config.js';
 import { createLogger } from '../../utils/logger.js';
 import { TEAM_OPTIONS } from '../../core/teamContext.js';
 
@@ -22,7 +22,8 @@ const ROLE_CONFIG = {
         TEAM_OPTIONS.flatMap((team) => ([
             [`${team.id}_facilitator`, { label: `${team.shortLabel} Facilitator`, color: 'info', icon: team.shortLabel.slice(0, 1) }],
             [`${team.id}_notetaker`, { label: `${team.shortLabel} Notetaker`, color: 'success', icon: team.shortLabel.slice(0, 1) }],
-            [`${team.id}_whitecell`, { label: `${team.shortLabel} White Cell`, color: 'warning', icon: team.shortLabel.slice(0, 1) }]
+            [`${team.id}_whitecell_lead`, { label: `${team.shortLabel} White Cell Lead`, color: 'warning', icon: `${team.shortLabel.slice(0, 1)}L` }],
+            [`${team.id}_whitecell_support`, { label: `${team.shortLabel} White Cell Support`, color: 'warning', icon: `${team.shortLabel.slice(0, 1)}S` }]
         ]))
     )
 };
@@ -112,14 +113,14 @@ export function createParticipantList(options = {}) {
 
         roleCountsContainer.innerHTML = Object.entries(ROLE_CONFIG).map(([role, config]) => {
             const count = counts[role] || 0;
-            const limit = CONFIG.ROLE_LIMITS[role] || 'inf';
+            const limit = getRoleLimit(role);
             const isFull = count >= limit;
 
             return `
                 <div class="role-count-item ${isFull ? 'role-count-full' : ''}">
                     <span class="role-count-icon">${config.icon}</span>
                     <span class="role-count-label">${config.label}</span>
-                    <span class="role-count-value">${count}/${limit}</span>
+                    <span class="role-count-value">${count}/${Number.isFinite(limit) ? limit : 'inf'}</span>
                 </div>
             `;
         }).join('');

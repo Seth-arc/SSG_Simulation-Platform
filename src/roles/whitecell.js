@@ -14,7 +14,12 @@ import { formatDateTime, formatRelativeTime } from '../utils/formatting.js';
 import { CONFIG } from '../core/config.js';
 import { ENUMS, canAdjudicateAction } from '../core/enums.js';
 import { navigateToApp } from '../core/navigation.js';
-import { OPERATOR_SURFACES, resolveTeamContext } from '../core/teamContext.js';
+import {
+    OPERATOR_SURFACES,
+    WHITE_CELL_OPERATOR_ROLES,
+    parseTeamRole,
+    resolveTeamContext
+} from '../core/teamContext.js';
 
 const logger = createLogger('WhiteCell');
 
@@ -63,20 +68,23 @@ export function getWhiteCellDomContract(documentRef = document) {
 export function getWhiteCellAccessState(teamContext, sessionStoreRef = sessionStore) {
     const sessionId = sessionStoreRef.getSessionId?.() || sessionStoreRef.getSessionData?.()?.id || null;
     const role = sessionStoreRef.getRole?.() || sessionStoreRef.getSessionData?.()?.role || null;
+    const parsedRole = parseTeamRole(role);
+    const allowedRole = role === teamContext.whitecellLeadRole || role === teamContext.whitecellSupportRole;
     const allowed = Boolean(
         sessionId &&
-        role === teamContext.whitecellRole &&
+        allowedRole &&
         sessionStoreRef.hasOperatorAccess?.(OPERATOR_SURFACES.WHITE_CELL, {
             sessionId,
             teamId: teamContext.teamId,
-            role: teamContext.whitecellRole
+            role
         })
     );
 
     return {
         allowed,
         sessionId,
-        role
+        role,
+        operatorRole: parsedRole.operatorRole || WHITE_CELL_OPERATOR_ROLES.LEAD
     };
 }
 
@@ -91,6 +99,7 @@ export class WhiteCellController {
         this.teamContext = resolveTeamContext();
         this.teamId = this.teamContext.teamId;
         this.teamLabel = this.teamContext.teamLabel;
+        this.operatorRole = WHITE_CELL_OPERATOR_ROLES.LEAD;
     }
 
     async init() {
@@ -106,6 +115,7 @@ export class WhiteCellController {
             return;
         }
 
+        this.operatorRole = accessState.operatorRole || WHITE_CELL_OPERATOR_ROLES.LEAD;
         const sessionId = accessState.sessionId;
 
         this.configureTeamLabels();
@@ -121,11 +131,17 @@ export class WhiteCellController {
         const headerTitle = document.querySelector('.header-title');
         const recipientSelect = document.getElementById('commRecipient');
         if (headerTitle) {
-            headerTitle.textContent = this.teamContext.whitecellLabel;
+            headerTitle.textContent = this.isLeadOperator()
+                ? this.teamContext.whitecellLeadLabel
+                : this.teamContext.whitecellSupportLabel;
         }
         if (recipientSelect && Array.from(recipientSelect.options).some((option) => option.value === this.teamId)) {
             recipientSelect.value = this.teamId;
         }
+    }
+
+    isLeadOperator() {
+        return this.operatorRole !== WHITE_CELL_OPERATOR_ROLES.SUPPORT;
     }
 
     bindEventListeners() {
@@ -138,13 +154,31 @@ export class WhiteCellController {
         const nextMoveBtn = document.getElementById('nextMoveBtn');
         const commForm = document.getElementById('commForm');
 
-        startTimerBtn?.addEventListener('click', () => this.startTimer());
-        pauseTimerBtn?.addEventListener('click', () => this.pauseTimer());
-        resetTimerBtn?.addEventListener('click', () => this.resetTimer());
-        prevPhaseBtn?.addEventListener('click', () => this.regressPhase());
-        nextPhaseBtn?.addEventListener('click', () => this.advancePhase());
-        prevMoveBtn?.addEventListener('click', () => this.regressMove());
-        nextMoveBtn?.addEventListener('click', () => this.advanceMove());
+        if (this.isLeadOperator()) {
+            startTimerBtn?.addEventListener('click', () => this.startTimer());
+            pauseTimerBtn?.addEventListener('click', () => this.pauseTimer());
+            resetTimerBtn?.addEventListener('click', () => this.resetTimer());
+            prevPhaseBtn?.addEventListener('click', () => this.regressPhase());
+            nextPhaseBtn?.addEventListener('click', () => this.advancePhase());
+            prevMoveBtn?.addEventListener('click', () => this.regressMove());
+            nextMoveBtn?.addEventListener('click', () => this.advanceMove());
+        } else {
+            [
+                startTimerBtn,
+                pauseTimerBtn,
+                resetTimerBtn,
+                prevPhaseBtn,
+                nextPhaseBtn,
+                prevMoveBtn,
+                nextMoveBtn
+            ].forEach((button) => {
+                if (!button) return;
+                button.disabled = true;
+                button.setAttribute?.('aria-disabled', 'true');
+                button.title = 'White Cell support is read-only for game controls.';
+            });
+        }
+
         commForm?.addEventListener('submit', (event) => this.handleCommunicationSubmit(event));
     }
 
@@ -277,6 +311,14 @@ export class WhiteCellController {
         const nextMoveBtn = document.getElementById('nextMoveBtn');
         const prevPhaseBtn = document.getElementById('prevPhaseBtn');
         const nextPhaseBtn = document.getElementById('nextPhaseBtn');
+
+        if (!this.isLeadOperator()) {
+            if (prevMoveBtn) prevMoveBtn.disabled = true;
+            if (nextMoveBtn) nextMoveBtn.disabled = true;
+            if (prevPhaseBtn) prevPhaseBtn.disabled = true;
+            if (nextPhaseBtn) nextPhaseBtn.disabled = true;
+            return;
+        }
 
         if (prevMoveBtn) prevMoveBtn.disabled = move <= 1;
         if (nextMoveBtn) nextMoveBtn.disabled = move >= 3;
@@ -654,7 +696,7 @@ export class WhiteCellController {
 
         container.innerHTML = this.actions.map((action) =>
             this.renderActionCard(action, {
-                showAdjudicateAction: canAdjudicateAction(action),
+                showAdjudicateAction: this.isLeadOperator() && canAdjudicateAction(action),
                 includeOutcome: true
             })
         ).join('');
@@ -675,7 +717,7 @@ export class WhiteCellController {
 
         container.innerHTML = pendingActions.map((action) =>
             this.renderActionCard(action, {
-                showAdjudicateAction: true,
+                showAdjudicateAction: this.isLeadOperator(),
                 includeOutcome: false
             })
         ).join('');
@@ -734,6 +776,10 @@ export class WhiteCellController {
     }
 
     bindAdjudicationButtons(container) {
+        if (!this.isLeadOperator()) {
+            return;
+        }
+
         container.querySelectorAll('.adjudicate-btn').forEach((button) => {
             button.addEventListener('click', () => {
                 const actionId = button.dataset.actionId;
@@ -746,6 +792,11 @@ export class WhiteCellController {
     }
 
     showAdjudicateModal(action) {
+        if (!this.isLeadOperator()) {
+            showToast({ message: 'White Cell support cannot adjudicate actions.', type: 'warning' });
+            return;
+        }
+
         const outcomeOptions = ENUMS.OUTCOMES
             .map((value) => `<option value="${value}">${value}</option>`)
             .join('');
@@ -1069,6 +1120,8 @@ export class WhiteCellController {
                 this.teamId,
                 this.teamContext.facilitatorRole,
                 this.teamContext.notetakerRole,
+                this.teamContext.whitecellLeadRole,
+                this.teamContext.whitecellSupportRole,
                 this.teamContext.whitecellRole
             ]);
             this.communications = (data || []).filter((communication) => allowedRecipients.has(communication.to_role));
@@ -1108,6 +1161,8 @@ export class WhiteCellController {
             [this.teamId]: this.teamLabel,
             [this.teamContext.facilitatorRole]: this.teamContext.facilitatorLabel,
             [this.teamContext.notetakerRole]: this.teamContext.notetakerLabel,
+            [this.teamContext.whitecellLeadRole]: this.teamContext.whitecellLeadLabel,
+            [this.teamContext.whitecellSupportRole]: this.teamContext.whitecellSupportLabel,
             [this.teamContext.whitecellRole]: this.teamContext.whitecellLabel
         };
 

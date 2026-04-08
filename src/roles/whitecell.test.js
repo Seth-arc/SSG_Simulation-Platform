@@ -104,37 +104,40 @@ describe('White Cell DOM contract', () => {
         const { getWhiteCellAccessState } = await loadWhiteCellModule();
         const teamContext = {
             teamId: 'blue',
-            whitecellRole: 'blue_whitecell'
+            whitecellLeadRole: 'blue_whitecell_lead',
+            whitecellSupportRole: 'blue_whitecell_support'
         };
 
         expect(getWhiteCellAccessState(teamContext, {
             getSessionId: () => 'session-1',
-            getSessionData: () => ({ role: 'blue_whitecell' }),
-            getRole: () => 'blue_whitecell',
+            getSessionData: () => ({ role: 'blue_whitecell_lead' }),
+            getRole: () => 'blue_whitecell_lead',
             hasOperatorAccess: () => false
         })).toMatchObject({
             allowed: false,
             sessionId: 'session-1',
-            role: 'blue_whitecell'
+            role: 'blue_whitecell_lead',
+            operatorRole: 'lead'
         });
 
         const hasOperatorAccess = vi.fn(() => true);
 
         expect(getWhiteCellAccessState(teamContext, {
             getSessionId: () => 'session-1',
-            getSessionData: () => ({ role: 'blue_whitecell' }),
-            getRole: () => 'blue_whitecell',
+            getSessionData: () => ({ role: 'blue_whitecell_support' }),
+            getRole: () => 'blue_whitecell_support',
             hasOperatorAccess
         })).toMatchObject({
             allowed: true,
             sessionId: 'session-1',
-            role: 'blue_whitecell'
+            role: 'blue_whitecell_support',
+            operatorRole: 'support'
         });
 
         expect(hasOperatorAccess).toHaveBeenCalledWith('whitecell', {
             sessionId: 'session-1',
             teamId: 'blue',
-            role: 'blue_whitecell'
+            role: 'blue_whitecell_support'
         });
     });
 });

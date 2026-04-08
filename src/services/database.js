@@ -6,6 +6,7 @@
 import { ensureBrowserIdentity, getRuntimeConfigStatus, supabase } from './supabase.js';
 import { sessionStore } from '../stores/session.js';
 import { createLogger } from '../utils/logger.js';
+import { CONFIG, getRoleLimit } from '../core/config.js';
 import { DatabaseError, NotFoundError, fromSupabaseError } from '../core/errors.js';
 import {
     ENUMS,
@@ -17,11 +18,14 @@ import {
 } from '../core/enums.js';
 
 const logger = createLogger('Database');
+let latestAuthenticatedSession = null;
 
 async function ensureAuthenticatedBrowser() {
-    return ensureBrowserIdentity({
+    latestAuthenticatedSession = await ensureBrowserIdentity({
         clientId: sessionStore.getClientId()
     });
+
+    return latestAuthenticatedSession;
 }
 
 export function getDatabaseRuntimeStatus() {
@@ -55,6 +59,46 @@ export function mergeNotetakerRecord(existingRecord = null, noteData = {}, {
         observation_timeline: replacementTimeline ?? [...existingTimeline, ...appendedTimeline],
         updated_at: timestamp
     };
+}
+
+function normalizeParticipantSeatRecord(record = null) {
+    if (!record || typeof record !== 'object') {
+        return record;
+    }
+
+    return {
+        ...record,
+        display_name: record.display_name ?? record.participant_name ?? record.participants?.name ?? null,
+        client_id: record.client_id ?? record.participants?.client_id ?? null,
+        participantSessionId: record.id,
+        participantId: record.participant_id
+    };
+}
+
+async function invokeKeepaliveRpc(functionName, payload = {}) {
+    const accessToken = latestAuthenticatedSession?.access_token;
+    if (!CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY || !accessToken) {
+        return false;
+    }
+
+    try {
+        const response = await fetch(`${CONFIG.SUPABASE_URL}/rest/v1/rpc/${functionName}`, {
+            method: 'POST',
+            keepalive: true,
+            headers: {
+                apikey: CONFIG.SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${accessToken}`,
+                'Content-Type': 'application/json',
+                Prefer: 'return=representation'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        return response.ok;
+    } catch (error) {
+        logger.warn('Keepalive RPC failed:', error);
+        return false;
+    }
 }
 
 /**
@@ -341,127 +385,56 @@ export const database = {
     // ==================== PARTICIPANTS ====================
 
     /**
-     * Register a participant in a session
+     * Claim a seat for the current browser identity through the server-side RPC.
+     * This is the authoritative join contract for public participants and White Cell operators.
      * @param {string} sessionId - Session ID
      * @param {string} role - Participant role
      * @param {string} name - Display name
-     * @returns {Promise<Object>} Created session_participant record
+     * @returns {Promise<Object>} Claimed session_participant record
      */
-    async registerParticipant(sessionId, role, name = '') {
+    async claimParticipantSeat(sessionId, role, name = '') {
         await ensureAuthenticatedBrowser();
-        const clientId = sessionStore.getClientId();
 
-        // Step 1: Get or create participant in participants table
-        let participant;
-        const { data: existingParticipant } = await supabase
-            .from('participants')
-            .select('*')
-            .eq('client_id', clientId)
-            .maybeSingle();
-
-        if (existingParticipant) {
-            // Update name if provided
-            if (name && name !== existingParticipant.name) {
-                const { data: updated, error: updateError } = await supabase
-                    .from('participants')
-                    .update({ name, updated_at: new Date().toISOString() })
-                    .eq('id', existingParticipant.id)
-                    .select()
-                    .single();
-
-                if (updateError) {
-                    throw fromSupabaseError(updateError, 'updateParticipantName');
-                }
-                participant = updated;
-            } else {
-                participant = existingParticipant;
-            }
-        } else {
-            // Create new participant
-            const { data: newParticipant, error: createError } = await supabase
-                .from('participants')
-                .insert({
-                    client_id: clientId,
-                    name: name || null,
-                    role: role
-                })
-                .select()
-                .single();
-
-            if (createError) {
-                throw fromSupabaseError(createError, 'createParticipant');
-            }
-            participant = newParticipant;
-        }
-
-        // Step 2: Check if session_participant record exists
-        const { data: existingSessionParticipant } = await supabase
-            .from('session_participants')
-            .select('*')
-            .eq('session_id', sessionId)
-            .eq('participant_id', participant.id)
-            .maybeSingle();
-
-        if (existingSessionParticipant) {
-            // Reactivate existing session participant
-            const { data: updated, error: updateError } = await supabase
-                .from('session_participants')
-                .update({
-                    role,
-                    is_active: true,
-                    heartbeat_at: new Date().toISOString(),
-                    last_seen: new Date().toISOString(),
-                    disconnected_at: null
-                })
-                .eq('id', existingSessionParticipant.id)
-                .select()
-                .single();
-
-            if (updateError) {
-                throw fromSupabaseError(updateError, 'reactivateSessionParticipant');
-            }
-
-            logger.info('Participant reactivated:', { role, sessionId: sessionId.substring(0, 8) });
-            return { ...updated, participantName: name };
-        }
-
-        // Step 3: Create new session_participant record
-        const { data, error } = await supabase
-            .from('session_participants')
-            .insert({
-                session_id: sessionId,
-                participant_id: participant.id,
-                role,
-                is_active: true,
-                heartbeat_at: new Date().toISOString(),
-                joined_at: new Date().toISOString(),
-                last_seen: new Date().toISOString()
-            })
-            .select()
-            .single();
+        const { data, error } = await supabase.rpc('claim_session_role_seat', {
+            requested_session_id: sessionId,
+            requested_role: role,
+            requested_name: name || null,
+            requested_client_id: sessionStore.getClientId(),
+            requested_timeout_seconds: CONFIG.HEARTBEAT_TIMEOUT_SECONDS
+        });
 
         if (error) {
-            throw fromSupabaseError(error, 'registerParticipant');
+            throw fromSupabaseError(error, 'claimParticipantSeat');
         }
 
-        logger.info('Participant registered:', { role, sessionId: sessionId.substring(0, 8) });
-        return { ...data, participantName: name };
+        const claimedSeat = normalizeParticipantSeatRecord(data);
+        logger.info('Participant seat claimed:', {
+            role,
+            sessionId: sessionId?.substring?.(0, 8),
+            claimStatus: claimedSeat?.claim_status
+        });
+
+        return claimedSeat;
+    },
+
+    async registerParticipant(sessionId, role, name = '') {
+        return this.claimParticipantSeat(sessionId, role, name);
     },
 
     /**
      * Update participant record
      * @param {string} sessionId - Session ID
-     * @param {string} participantId - Participant ID
+     * @param {string} sessionParticipantId - Session participant record ID
      * @param {Object} updates - Updates to apply
      * @returns {Promise<Object>} Updated record
      */
-    async updateParticipant(sessionId, participantId, updates) {
+    async updateParticipant(sessionId, sessionParticipantId, updates) {
         await ensureAuthenticatedBrowser();
         const { data, error } = await supabase
             .from('session_participants')
             .update(updates)
+            .eq('id', sessionParticipantId)
             .eq('session_id', sessionId)
-            .eq('participant_id', participantId)
             .select()
             .single();
 
@@ -469,65 +442,85 @@ export const database = {
             throw fromSupabaseError(error, 'updateParticipant');
         }
 
-        return data;
+        return normalizeParticipantSeatRecord(data);
     },
 
     /**
      * Update heartbeat for current participant
      * @param {string} sessionId - Session ID
      */
-    async updateHeartbeat(sessionId) {
+    async updateHeartbeat(sessionId, sessionParticipantId = sessionStore.getSessionParticipantId?.()) {
         await ensureAuthenticatedBrowser();
-        const clientId = sessionStore.getClientId();
 
-        // First get the participant record by client_id
-        const { data: participant } = await supabase
-            .from('participants')
-            .select('id')
-            .eq('client_id', clientId)
-            .maybeSingle();
-
-        if (!participant) {
-            logger.error('Heartbeat update failed: participant not found for client', clientId);
-            return;
+        if (!sessionParticipantId) {
+            throw new DatabaseError('Cannot send a heartbeat without a claimed seat.', 'updateHeartbeat');
         }
 
-        const { error } = await supabase
-            .from('session_participants')
-            .update({
-                heartbeat_at: new Date().toISOString(),
-                last_seen: new Date().toISOString(),
-                is_active: true
-            })
-            .eq('session_id', sessionId)
-            .eq('participant_id', participant.id);
+        const { data, error } = await supabase.rpc('heartbeat_session_role_seat', {
+            requested_session_id: sessionId,
+            requested_session_participant_id: sessionParticipantId,
+            requested_client_id: sessionStore.getClientId(),
+            requested_timeout_seconds: CONFIG.HEARTBEAT_TIMEOUT_SECONDS
+        });
 
         if (error) {
-            logger.error('Heartbeat update failed:', error);
+            throw fromSupabaseError(error, 'updateHeartbeat');
         }
+
+        return normalizeParticipantSeatRecord(data);
     },
 
     /**
      * Mark participant as disconnected
      * @param {string} sessionId - Session ID
-     * @param {string} participantId - Participant ID
+     * @param {string} sessionParticipantId - Session participant ID
      */
     async disconnectParticipant(sessionId, sessionParticipantId) {
         await ensureAuthenticatedBrowser();
-        // sessionParticipantId is the session_participants.id (record ID)
-        const { error } = await supabase
-            .from('session_participants')
-            .update({
-                is_active: false,
-                left_at: new Date().toISOString(),
-                disconnected_at: new Date().toISOString()
-            })
-            .eq('id', sessionParticipantId)
-            .eq('session_id', sessionId);
+        if (!sessionParticipantId) {
+            return null;
+        }
+
+        const { data, error } = await supabase.rpc('disconnect_session_role_seat', {
+            requested_session_id: sessionId,
+            requested_session_participant_id: sessionParticipantId,
+            requested_client_id: sessionStore.getClientId(),
+            requested_timeout_seconds: CONFIG.HEARTBEAT_TIMEOUT_SECONDS
+        });
 
         if (error) {
-            logger.error('Disconnect update failed:', error);
+            throw fromSupabaseError(error, 'disconnectParticipant');
         }
+
+        return normalizeParticipantSeatRecord(data);
+    },
+
+    async disconnectParticipantKeepalive(sessionId, sessionParticipantId) {
+        if (!sessionId || !sessionParticipantId) {
+            return false;
+        }
+
+        return invokeKeepaliveRpc('disconnect_session_role_seat', {
+            requested_session_id: sessionId,
+            requested_session_participant_id: sessionParticipantId,
+            requested_client_id: sessionStore.getClientId(),
+            requested_timeout_seconds: CONFIG.HEARTBEAT_TIMEOUT_SECONDS
+        });
+    },
+
+    async releaseStaleParticipantSeats(sessionId) {
+        await ensureAuthenticatedBrowser();
+
+        const { data, error } = await supabase.rpc('release_stale_session_role_seats', {
+            requested_session_id: sessionId,
+            requested_timeout_seconds: CONFIG.HEARTBEAT_TIMEOUT_SECONDS
+        });
+
+        if (error) {
+            throw fromSupabaseError(error, 'releaseStaleParticipantSeats');
+        }
+
+        return data ?? 0;
     },
 
     /**
@@ -537,25 +530,16 @@ export const database = {
      */
     async getActiveParticipants(sessionId) {
         await ensureAuthenticatedBrowser();
-        const cutoff = new Date(Date.now() - 300000).toISOString(); // 5 minutes ago
-
-        const { data, error } = await supabase
-            .from('session_participants')
-            .select('*, participants(name, client_id)')
-            .eq('session_id', sessionId)
-            .eq('is_active', true)
-            .gt('heartbeat_at', cutoff);
+        const { data, error } = await supabase.rpc('list_active_session_participants', {
+            requested_session_id: sessionId,
+            requested_timeout_seconds: CONFIG.HEARTBEAT_TIMEOUT_SECONDS
+        });
 
         if (error) {
             throw fromSupabaseError(error, 'getActiveParticipants');
         }
 
-        // Flatten the participant name into the result for easier access
-        return (data || []).map(sp => ({
-            ...sp,
-            display_name: sp.participants?.name || 'Unknown',
-            client_id: sp.participants?.client_id
-        }));
+        return (data || []).map((participant) => normalizeParticipantSeatRecord(participant));
     },
 
     /**
@@ -566,25 +550,14 @@ export const database = {
      * @returns {Promise<Object>} Availability info
      */
     async checkRoleAvailability(sessionId, role, maxAllowed) {
-        await ensureAuthenticatedBrowser();
-        const cutoff = new Date(Date.now() - 300000).toISOString(); // 5 minutes ago
-
-        const { data, error } = await supabase
-            .from('session_participants')
-            .select('*')
-            .eq('session_id', sessionId)
-            .eq('role', role)
-            .eq('is_active', true)
-            .gt('heartbeat_at', cutoff);
-
-        if (error) {
-            throw fromSupabaseError(error, 'checkRoleAvailability');
-        }
+        const activeParticipants = await this.getActiveParticipants(sessionId);
+        const currentCount = activeParticipants.filter((participant) => participant.role === role).length;
+        const resolvedMaxAllowed = maxAllowed ?? getRoleLimit(role);
 
         return {
-            available: (data?.length || 0) < maxAllowed,
-            currentCount: data?.length || 0,
-            maxAllowed
+            available: currentCount < resolvedMaxAllowed,
+            currentCount,
+            maxAllowed: resolvedMaxAllowed
         };
     },
 

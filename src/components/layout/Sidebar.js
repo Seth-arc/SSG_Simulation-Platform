@@ -214,6 +214,73 @@ export function getSidebarItemsForRole(role) {
                 href: '#timeline'
             }
         ],
+        blue_whitecell_lead: [
+            {
+                id: 'controls',
+                label: 'Game Controls',
+                icon: getIcon('controls'),
+                href: '#controls'
+            },
+            { type: 'divider' },
+            {
+                id: 'actions',
+                label: 'Review Actions',
+                icon: getIcon('actions'),
+                href: '#actions'
+            },
+            {
+                id: 'adjudication',
+                label: 'Adjudication',
+                icon: getIcon('adjudication'),
+                href: '#adjudication'
+            },
+            {
+                id: 'requests',
+                label: 'RFI Queue',
+                icon: getIcon('requests'),
+                href: '#requests'
+            },
+            { type: 'divider' },
+            {
+                id: 'communications',
+                label: 'Communications',
+                icon: getIcon('communications'),
+                href: '#communications'
+            },
+            {
+                id: 'timeline',
+                label: 'Timeline',
+                icon: getIcon('timeline'),
+                href: '#timeline'
+            }
+        ],
+        blue_whitecell_support: [
+            {
+                id: 'actions',
+                label: 'Review Actions',
+                icon: getIcon('actions'),
+                href: '#actions'
+            },
+            {
+                id: 'requests',
+                label: 'RFI Queue',
+                icon: getIcon('requests'),
+                href: '#requests'
+            },
+            { type: 'divider' },
+            {
+                id: 'communications',
+                label: 'Communications',
+                icon: getIcon('communications'),
+                href: '#communications'
+            },
+            {
+                id: 'timeline',
+                label: 'Timeline',
+                icon: getIcon('timeline'),
+                href: '#timeline'
+            }
+        ],
         blue_whitecell: [
             {
                 id: 'controls',

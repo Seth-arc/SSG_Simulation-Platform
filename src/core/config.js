@@ -1,10 +1,32 @@
-import { TEAM_OPTIONS, buildTeamRole, ROLE_SURFACES } from './teamContext.js';
+import {
+    TEAM_OPTIONS,
+    WHITE_CELL_OPERATOR_ROLES,
+    buildTeamRole,
+    buildWhiteCellOperatorRole,
+    ROLE_SURFACES
+} from './teamContext.js';
+
+export const LIVE_DEMO_SEAT_LIMITS = Object.freeze({
+    facilitator: 1,
+    notetaker: 4,
+    observer: 5,
+    whiteCellLead: 1,
+    whiteCellSupport: 1,
+    gameMaster: 1
+});
 
 const TEAM_ROLE_LIMITS = Object.fromEntries(
     TEAM_OPTIONS.flatMap((team) => ([
-        [buildTeamRole(team.id, ROLE_SURFACES.FACILITATOR), 1],
-        [buildTeamRole(team.id, ROLE_SURFACES.WHITECELL), 1],
-        [buildTeamRole(team.id, ROLE_SURFACES.NOTETAKER), 2]
+        [buildTeamRole(team.id, ROLE_SURFACES.FACILITATOR), LIVE_DEMO_SEAT_LIMITS.facilitator],
+        [buildTeamRole(team.id, ROLE_SURFACES.NOTETAKER), LIVE_DEMO_SEAT_LIMITS.notetaker],
+        [
+            buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.LEAD),
+            LIVE_DEMO_SEAT_LIMITS.whiteCellLead
+        ],
+        [
+            buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.SUPPORT),
+            LIVE_DEMO_SEAT_LIMITS.whiteCellSupport
+        ]
     ]))
 );
 
@@ -23,14 +45,16 @@ export const CONFIG = {
 
     // Role limits per session
     ROLE_LIMITS: {
-        'white': 1,
+        white: LIVE_DEMO_SEAT_LIMITS.gameMaster,
         ...TEAM_ROLE_LIMITS,
-        'viewer': 999
+        viewer: LIVE_DEMO_SEAT_LIMITS.observer
     },
 
     // Heartbeat settings
     HEARTBEAT_INTERVAL_MS: 30000,       // 30 seconds
-    HEARTBEAT_TIMEOUT_SECONDS: 120,      // 2 minutes - consider user disconnected after this
+    HEARTBEAT_TIMEOUT_SECONDS: 90,      // 90 seconds - matches live-demo seat release on the backend
+    HEARTBEAT_TIMEOUT_MS: 90000,
+    PRESENCE_CLEANUP_INTERVAL_MS: 30000,
 
     // Timer defaults
     DEFAULT_TIMER_SECONDS: 5400,         // 90 minutes
@@ -83,6 +107,32 @@ export function isValidSupabaseUrl(url) {
         url.includes('.supabase.co') &&
         !isPlaceholderValue(url)
     );
+}
+
+export function getRoleLimit(role, config = CONFIG) {
+    return config.ROLE_LIMITS?.[role] ?? Number.POSITIVE_INFINITY;
+}
+
+export function getHeartbeatTimeoutMs(config = CONFIG) {
+    return config.HEARTBEAT_TIMEOUT_MS
+        ?? ((config.HEARTBEAT_TIMEOUT_SECONDS ?? CONFIG.HEARTBEAT_TIMEOUT_SECONDS) * 1000);
+}
+
+export function getHeartbeatCutoffIso(referenceMs = Date.now(), config = CONFIG) {
+    return new Date(referenceMs - getHeartbeatTimeoutMs(config)).toISOString();
+}
+
+export function isHeartbeatFresh(heartbeatAt, referenceMs = Date.now(), config = CONFIG) {
+    if (!heartbeatAt) {
+        return false;
+    }
+
+    const heartbeatMs = new Date(heartbeatAt).getTime();
+    if (Number.isNaN(heartbeatMs)) {
+        return false;
+    }
+
+    return heartbeatMs >= (referenceMs - getHeartbeatTimeoutMs(config));
 }
 
 /**

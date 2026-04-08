@@ -1,10 +1,24 @@
-import { TEAM_OPTIONS, buildTeamRole, ROLE_SURFACES } from './teamContext.js';
+import {
+    TEAM_OPTIONS,
+    WHITE_CELL_OPERATOR_ROLES,
+    buildTeamRole,
+    buildWhiteCellOperatorRole,
+    ROLE_SURFACES
+} from './teamContext.js';
 
 const TEAM_ROLES = Object.freeze(
     Object.fromEntries(
         TEAM_OPTIONS.flatMap((team) => ([
             [`${team.id.toUpperCase()}_FACILITATOR`, buildTeamRole(team.id, ROLE_SURFACES.FACILITATOR)],
             [`${team.id.toUpperCase()}_WHITECELL`, buildTeamRole(team.id, ROLE_SURFACES.WHITECELL)],
+            [
+                `${team.id.toUpperCase()}_WHITECELL_LEAD`,
+                buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.LEAD)
+            ],
+            [
+                `${team.id.toUpperCase()}_WHITECELL_SUPPORT`,
+                buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.SUPPORT)
+            ],
             [`${team.id.toUpperCase()}_NOTETAKER`, buildTeamRole(team.id, ROLE_SURFACES.NOTETAKER)]
         ]))
     )

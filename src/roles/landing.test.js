@@ -18,7 +18,8 @@ describe('landing public role visibility', () => {
         ]);
         expect(html).not.toContain('data-role-surface="whitecell"');
         expect(html).toContain('Operator Access');
-        expect(html).toContain('operatorWhiteCellBtn');
+        expect(html).toContain('operatorWhiteCellLeadBtn');
+        expect(html).toContain('operatorWhiteCellSupportBtn');
         expect(html).toContain('operatorGameMasterBtn');
     });
 });

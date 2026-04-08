@@ -10,8 +10,7 @@ const {
 } = vi.hoisted(() => ({
     mockDatabase: {
         lookupJoinableSessionByCode: vi.fn(),
-        checkRoleAvailability: vi.fn(),
-        registerParticipant: vi.fn(),
+        claimParticipantSeat: vi.fn(),
         getGameState: vi.fn(),
         disconnectParticipant: vi.fn(),
         getActiveSessions: vi.fn(),
@@ -110,13 +109,9 @@ describe('landing secure join flow', () => {
             session_code: 'ALPHA2026',
             status: 'active'
         });
-        mockDatabase.checkRoleAvailability.mockResolvedValue({
-            available: true,
-            currentCount: 0,
-            maxAllowed: 1
-        });
-        mockDatabase.registerParticipant.mockResolvedValue({
-            id: 'session-participant-1'
+        mockDatabase.claimParticipantSeat.mockResolvedValue({
+            id: 'session-participant-1',
+            claim_status: 'claimed'
         });
         mockDatabase.getGameState.mockResolvedValue({
             move: 1,
@@ -140,18 +135,19 @@ describe('landing secure join flow', () => {
         expect(mockDatabase.lookupJoinableSessionByCode).toHaveBeenCalledWith('ALPHA2026');
         expect(mockDatabase.getActiveSessions).not.toHaveBeenCalled();
         expect(mockDatabase.getActiveParticipants).not.toHaveBeenCalled();
-        expect(mockDatabase.checkRoleAvailability).toHaveBeenCalledWith('session-1', 'blue_facilitator', 1);
-        expect(mockDatabase.registerParticipant).toHaveBeenCalledWith('session-1', 'blue_facilitator', 'Morgan');
+        expect(mockDatabase.claimParticipantSeat).toHaveBeenCalledWith('session-1', 'blue_facilitator', 'Morgan');
         expect(mockSessionStore.setSessionId).toHaveBeenCalledWith('session-1');
         expect(mockSessionStore.setSessionData).toHaveBeenCalledWith(expect.objectContaining({
             id: 'session-1',
             name: 'Alpha Session',
             code: 'ALPHA2026',
             participantId: 'session-participant-1',
+            participantSessionId: 'session-participant-1',
             role: 'blue_facilitator',
             displayName: 'Morgan',
             team: 'blue',
-            roleSurface: 'facilitator'
+            roleSurface: 'facilitator',
+            seatClaimStatus: 'claimed'
         }));
         expect(controller.redirectToRole).toHaveBeenCalledWith('blue_facilitator');
         expect(mockShowToast).toHaveBeenCalledWith({
@@ -189,7 +185,7 @@ describe('landing secure join flow', () => {
         });
 
         expect(mockDatabase.lookupJoinableSessionByCode).toHaveBeenCalledWith('MISSING-CODE');
-        expect(mockDatabase.registerParticipant).not.toHaveBeenCalled();
+        expect(mockDatabase.claimParticipantSeat).not.toHaveBeenCalled();
         expect(mockDatabase.getActiveSessions).not.toHaveBeenCalled();
         expect(mockShowToast).toHaveBeenCalledWith({
             message: 'Session not found. Please check the code and try again.',

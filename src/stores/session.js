@@ -4,7 +4,11 @@
  */
 
 import { createLogger } from '../utils/logger.js';
-import { OPERATOR_SURFACES, isOperatorSurface } from '../core/teamContext.js';
+import {
+    OPERATOR_SURFACES,
+    isOperatorSurface,
+    normalizeWhiteCellOperatorRole
+} from '../core/teamContext.js';
 
 const logger = createLogger('SessionStore');
 
@@ -75,7 +79,7 @@ function normalizeOperatorAuth(auth) {
         sessionId: normalizeString(auth.sessionId),
         sessionCode: normalizeString(auth.sessionCode, { uppercase: true }),
         teamId: normalizeString(auth.teamId),
-        role: normalizeString(auth.role),
+        role: normalizeWhiteCellOperatorRole(normalizeString(auth.role) || ''),
         grantedAt: normalizeString(auth.grantedAt) || new Date().toISOString()
     };
 }
@@ -122,9 +126,41 @@ function buildDefaultSessionData(sessionId = currentSessionId) {
         name: null,
         code: null,
         participantId: null,
+        participantSessionId: null,
         role: currentRole,
         displayName: currentUserName || null,
         gameState: buildDefaultGameState()
+    };
+}
+
+function normalizeSessionRole(role) {
+    if (!role || typeof role !== 'string') {
+        return role ?? null;
+    }
+
+    return normalizeWhiteCellOperatorRole(role);
+}
+
+function normalizeSessionData(data, sessionId = currentSessionId) {
+    if (!data || typeof data !== 'object') {
+        return buildDefaultSessionData(sessionId);
+    }
+
+    const resolvedSessionId = data.id || sessionId;
+    const participantSessionId = data.participantSessionId || data.participantId || null;
+
+    return {
+        ...buildDefaultSessionData(resolvedSessionId),
+        ...data,
+        id: resolvedSessionId,
+        participantId: participantSessionId,
+        participantSessionId,
+        role: normalizeSessionRole(data.role || currentRole),
+        displayName: data.displayName || currentUserName || null,
+        gameState: {
+            ...buildDefaultGameState(),
+            ...(data.gameState || {})
+        }
     };
 }
 
@@ -159,17 +195,13 @@ function getEffectiveSessionData() {
         return currentSessionData;
     }
 
-    currentSessionData = {
+    currentSessionData = normalizeSessionData({
         ...baseData,
         ...currentSessionData,
         id: currentSessionData.id || sessionId,
         role: currentSessionData.role || currentRole,
-        displayName: currentSessionData.displayName || currentUserName || null,
-        gameState: {
-            ...buildDefaultGameState(),
-            ...(currentSessionData.gameState || {})
-        }
-    };
+        displayName: currentSessionData.displayName || currentUserName || null
+    }, sessionId);
 
     return currentSessionData;
 }
@@ -254,9 +286,9 @@ export const sessionStore = {
     init() {
         currentSessionId = localStorage.getItem('esg_session_id');
         currentClientId = localStorage.getItem('esg_client_id') || this.generateClientId();
-        currentRole = localStorage.getItem('esg_role');
+        currentRole = normalizeSessionRole(localStorage.getItem('esg_role'));
         currentUserName = localStorage.getItem('esg_user_name');
-        currentSessionData = readSessionDataFromStorage();
+        currentSessionData = normalizeSessionData(readSessionDataFromStorage(), currentSessionId);
         currentOperatorAuth = readOperatorAuthFromStorage();
 
         if (currentSessionData?.id && currentSessionId && currentSessionData.id !== currentSessionId) {
@@ -311,18 +343,18 @@ export const sessionStore = {
     },
 
     setRole(role) {
-        currentRole = role;
-        localStorage.setItem('esg_role', role);
+        currentRole = normalizeSessionRole(role);
+        localStorage.setItem('esg_role', currentRole);
 
         if (currentSessionData) {
             currentSessionData = {
                 ...currentSessionData,
-                role
+                role: currentRole
             };
             persistSessionData();
         }
 
-        logger.info('Role set:', role);
+        logger.info('Role set:', currentRole);
         notifyListeners();
     },
 
@@ -375,6 +407,11 @@ export const sessionStore = {
 
     getSessionData() {
         return getEffectiveSessionData();
+    },
+
+    getSessionParticipantId() {
+        const sessionData = getEffectiveSessionData();
+        return sessionData?.participantSessionId || sessionData?.participantId || null;
     },
 
     getOperatorAuth() {
@@ -443,17 +480,12 @@ export const sessionStore = {
             return;
         }
 
-        currentSessionData = {
-            ...buildDefaultSessionData(sessionId),
+        currentSessionData = normalizeSessionData({
             ...data,
             id: sessionId,
             role: data.role || currentRole,
-            displayName: data.displayName || currentUserName || null,
-            gameState: {
-                ...buildDefaultGameState(),
-                ...(data.gameState || {})
-            }
-        };
+            displayName: data.displayName || currentUserName || null
+        }, sessionId);
 
         persistSessionData();
         notifyListeners();

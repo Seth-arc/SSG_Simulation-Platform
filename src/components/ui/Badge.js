@@ -1,4 +1,8 @@
-import { parseTeamRole, ROLE_SURFACES } from '../../core/teamContext.js';
+import {
+    WHITE_CELL_OPERATOR_ROLES,
+    parseTeamRole,
+    ROLE_SURFACES
+} from '../../core/teamContext.js';
 
 /**
  * Badge Component
@@ -120,7 +124,12 @@ export function createRoleBadge(role) {
     } else if (parsedRole.surface === ROLE_SURFACES.NOTETAKER) {
         config = { text: 'Notetaker', variant: 'info' };
     } else if (parsedRole.surface === ROLE_SURFACES.WHITECELL) {
-        config = { text: 'White Cell', variant: 'warning' };
+        config = {
+            text: parsedRole.operatorRole === WHITE_CELL_OPERATOR_ROLES.SUPPORT
+                ? 'White Cell Support'
+                : 'White Cell Lead',
+            variant: 'warning'
+        };
     }
 
     config ||= { text: role, variant: 'default' };
