@@ -8,10 +8,14 @@
     "dev:test": "vite --host 127.0.0.1 --port 4174 --strictPort",
     "build": "vite build",
     "preview": "vite preview",
+    "serve:test": "node --preserve-symlinks --preserve-symlinks-main ./tests/e2e/support/staticServer.mjs dist 4174",
     "test": "node --preserve-symlinks --preserve-symlinks-main ./node_modules/vitest/vitest.mjs run",
     "test:ui": "node --preserve-symlinks --preserve-symlinks-main ./node_modules/vitest/vitest.mjs --ui",
     "test:coverage": "node --preserve-symlinks --preserve-symlinks-main ./node_modules/vitest/vitest.mjs run --coverage",
-    "test:e2e": "playwright test"
+    "test:e2e": "node --preserve-symlinks --preserve-symlinks-main ./node_modules/@playwright/test/cli.js test",
+    "test:e2e:smoke": "node --preserve-symlinks --preserve-symlinks-main ./node_modules/@playwright/test/cli.js test tests/e2e/session-smoke.e2e.js",
+    "test:e2e:live-demo": "node --preserve-symlinks --preserve-symlinks-main ./node_modules/@playwright/test/cli.js test tests/e2e/live-demo-topology.e2e.js",
+    "test:e2e:rehearsal": "node --preserve-symlinks --preserve-symlinks-main ./node_modules/@playwright/test/cli.js test tests/e2e/live-demo-topology.e2e.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0"

@@ -1,21 +1,33 @@
 import { defineConfig } from '@playwright/test';
 
+const localBaseURL = 'http://127.0.0.1:4174';
+const externalBaseURL = process.env.PLAYWRIGHT_BASE_URL;
+
 export default defineConfig({
+    timeout: 90000,
+    expect: {
+        timeout: 10000
+    },
     testDir: './tests/e2e',
     testMatch: '**/*.e2e.js',
     fullyParallel: false,
-    retries: 0,
-    reporter: 'list',
+    workers: 1,
+    retries: process.env.CI ? 1 : 0,
+    reporter: process.env.CI
+        ? [['list'], ['html', { open: 'never' }]]
+        : 'list',
     use: {
-        baseURL: 'http://127.0.0.1:4174',
+        baseURL: externalBaseURL || localBaseURL,
         trace: 'on-first-retry',
         screenshot: 'only-on-failure',
         video: 'retain-on-failure'
     },
-    webServer: {
-        command: 'npm run dev:test',
-        url: 'http://127.0.0.1:4174',
-        reuseExistingServer: true,
-        timeout: 120000
-    }
+    webServer: externalBaseURL
+        ? undefined
+        : {
+            command: 'npm run serve:test',
+            url: localBaseURL,
+            reuseExistingServer: !process.env.CI,
+            timeout: 120000
+        }
 });
