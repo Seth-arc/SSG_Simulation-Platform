@@ -4,7 +4,6 @@
  */
 
 /* Base card */
-/* Base card */
 .card,
 .note-card {
     background: var(--color-surface);
@@ -21,10 +20,9 @@
 }
 
 /* Card variants */
-/* Card variants */
 .card-bordered {
     border: 1px solid var(--color-border);
-    box-shadow: 2px 2px 0 var(--color-border-subtle);
+    box-shadow: var(--shadow-sm);
 }
 
 .card-elevated {
@@ -45,8 +43,7 @@
     align-items: center;
     gap: 10px;
     padding-bottom: var(--space-sm);
-    border-bottom: 2px solid var(--color-border-light);
-    /* Thicker divider */
+    border-bottom: 1px solid var(--color-border-light);
 }
 
 /* Card icon */
@@ -89,8 +86,8 @@
 }
 
 .card-hoverable:hover {
-    box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.1);
-    transform: translate(-1px, -1px);
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
     border-color: var(--color-navy-muted);
 }
 

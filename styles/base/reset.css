@@ -141,7 +141,7 @@ input[type="search"]::-webkit-search-results-decoration {
 
 /* Focus visible for keyboard navigation */
 :focus-visible {
-    outline: 2px solid var(--color-primary, #3b82f6);
+    outline: 2px solid var(--color-primary-500, #115740);
     outline-offset: 2px;
 }
 

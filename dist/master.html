@@ -8,225 +8,22 @@
     <title>Game Master Operator Console - ESG Simulation</title>
 
     <!-- Styles -->
-
-    <style>
-        .skip-link {
-            position: absolute;
-            left: -9999px;
-            top: auto;
-            width: 1px;
-            height: 1px;
-            overflow: hidden;
-            z-index: 1000;
-        }
-
-        .skip-link:focus {
-            left: 1rem;
-            top: 1rem;
-            width: auto;
-            height: auto;
-            padding: 0.75rem 1rem;
-            background: #111827;
-            color: #ffffff;
-            border-radius: 0.375rem;
-        }
-
-        /* Interactive Polish for Dashboard */
-        .sidebar {
-            background: var(--color-surface);
-            border-right: 1px solid var(--color-border);
-            box-shadow: var(--shadow-md);
-            z-index: 10;
-        }
-
-        .sidebar-brand {
-            height: var(--header-height);
-            display: flex;
-            align-items: center;
-            padding: 0 var(--space-6);
-            border-bottom: 1px solid var(--color-border-subtle);
-            font-family: var(--font-serif);
-            font-weight: var(--font-bold);
-            font-size: var(--text-lg);
-            color: var(--color-navy);
-            letter-spacing: -0.02em;
-        }
-
-        .sidebar-menu {
-            padding: var(--space-4);
-        }
-
-        .sidebar-link {
-            display: flex;
-            align-items: center;
-            padding: var(--space-3) var(--space-4);
-            color: var(--color-text-secondary);
-            border-radius: var(--radius-lg);
-            transition: all var(--transition-fast);
-            margin-bottom: var(--space-1);
-            font-weight: var(--font-medium);
-            font-size: var(--text-sm);
-        }
-
-        .sidebar-link:hover {
-            background: var(--color-surface-hover);
-            color: var(--color-navy);
-            transform: translateX(4px);
-        }
-
-        .sidebar-link-active {
-            background: var(--color-navy-soft);
-            color: var(--color-navy);
-            font-weight: var(--font-semibold);
-        }
-
-        .sidebar-icon {
-            margin-right: var(--space-3);
-            width: 20px;
-            height: 20px;
-            opacity: 0.7;
-        }
-
-        .sidebar-link-active .sidebar-icon {
-            opacity: 1;
-        }
-
-        /* Header Polish */
-        .page-header {
-            background: rgba(255, 255, 255, 0.9);
-            backdrop-filter: blur(var(--blur-sm));
-            border-bottom: 1px solid var(--color-border-light);
-            box-shadow: var(--shadow-sm);
-        }
-
-        .header-title-section {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-
-        .header-title {
-            font-size: var(--text-base);
-            font-weight: var(--font-semibold);
-            color: var(--color-text);
-            margin: 0;
-            line-height: 1.2;
-        }
-
-        .header-subtitle {
-            font-size: var(--text-xs);
-            color: var(--color-text-muted);
-        }
-
-        /* Game State Indicators */
-        .header-game-state {
-            background: var(--color-surface);
-            border: 1px solid var(--color-border);
-            border-radius: var(--radius-full);
-            padding: 4px 16px;
-            display: flex;
-            gap: var(--space-4);
-            box-shadow: var(--shadow-sm);
-        }
-
-        .game-state-item {
-            display: flex;
-            align-items: center;
-            gap: var(--space-2);
-            font-size: var(--text-sm);
-        }
-
-        .game-state-label {
-            text-transform: uppercase;
-            font-size: 10px;
-            letter-spacing: 0.05em;
-            color: var(--color-text-muted);
-            font-weight: var(--font-bold);
-        }
-
-        .game-state-value {
-            font-family: var(--font-mono);
-            font-weight: var(--font-bold);
-            color: var(--color-navy);
-        }
-
-        /* Dashboard Cards */
-        .card {
-            border: 1px solid var(--color-border-light);
-            box-shadow: var(--shadow-card);
-            transition: transform var(--transition-smooth), box-shadow var(--transition-smooth);
-            overflow: hidden;
-        }
-
-        .card-hoverable:hover {
-            transform: translateY(-4px);
-            box-shadow: var(--shadow-lg);
-            border-color: var(--color-navy-soft);
-        }
-
-        .card-header {
-            background: linear-gradient(to right, rgba(249, 250, 251, 0.5), transparent);
-            border-bottom: 1px solid var(--color-border-light);
-            padding: var(--space-4) var(--space-6);
-        }
-
-        .card-header h3 {
-            font-size: var(--text-base);
-            font-weight: var(--font-semibold);
-            margin: 0;
-            color: var(--color-navy-deep);
-        }
-
-        .stat-card {
-            padding: var(--space-6);
-            display: flex;
-            flex-direction: column;
-        }
-
-        .stat-label {
-            font-size: var(--text-sm);
-            color: var(--color-text-muted);
-            margin-bottom: var(--space-2);
-        }
-
-        .stat-value {
-            font-size: var(--text-3xl);
-            font-family: var(--font-serif);
-            color: var(--color-navy);
-            font-weight: var(--font-medium);
-        }
-
-        /* Animation for section transitions */
-        .content-section {
-            animation: fadeIn 0.4s var(--transition-smooth);
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-    </style>
-  <script type="module" crossorigin src="/assets/master-Ds9GoCux.js"></script>
+  <script type="module" crossorigin src="/assets/master-5-KtkGa6.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/supabase-BQbgwcOn.js">
-  <link rel="modulepreload" crossorigin href="/assets/main-Sna_XDJf.js">
+  <link rel="modulepreload" crossorigin href="/assets/main-WLO6100K.js">
+  <link rel="modulepreload" crossorigin href="/assets/validation-B6xbvvWe.js">
+  <link rel="modulepreload" crossorigin href="/assets/formatting-D2MDenp7.js">
   <link rel="modulepreload" crossorigin href="/assets/Modal-O3kyaPUL.js">
-  <link rel="modulepreload" crossorigin href="/assets/formatting-BZ3CiXq9.js">
-  <link rel="modulepreload" crossorigin href="/assets/validation-D4C6BZfP.js">
-  <link rel="stylesheet" crossorigin href="/assets/main-BIPW7hAd.css">
-  <link rel="stylesheet" crossorigin href="/assets/master-R1S5i-lR.css">
+  <link rel="stylesheet" crossorigin href="/assets/main-Zi4aJJ8H.css">
+  <link rel="stylesheet" crossorigin href="/assets/validation-cvd1K-Uc.css">
+  <link rel="stylesheet" crossorigin href="/assets/formatting-BmVTRCK5.css">
+  <link rel="stylesheet" crossorigin href="/assets/master-Nx1XNa69.css">
 </head>
 
 <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <div id="runtimeConfigNotice" hidden aria-live="assertive"></div>
-    <div class="app-layout">
+    <div class="app-layout master-page">
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-brand">
@@ -235,8 +32,7 @@
 
             <nav class="sidebar-nav">
                 <ul class="sidebar-menu">
-                    <li class="sidebar-heading"
-                        style="padding: 0 var(--space-4); margin-bottom: var(--space-2); font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 600;">
+                    <li class="sidebar-heading">
                         Main</li>
                     <li class="sidebar-menu-item">
                         <a href="#dashboard" class="sidebar-link sidebar-link-active" data-section="dashboard">
@@ -279,8 +75,7 @@
                         </a>
                     </li>
 
-                    <li class="sidebar-heading"
-                        style="padding: 0 var(--space-4); margin: var(--space-4) 0 var(--space-2); font-size: 11px; text-transform: uppercase; color: var(--color-text-muted); font-weight: 600;">
+                    <li class="sidebar-heading">
                         Data</li>
 
                     <li class="sidebar-menu-item">
@@ -299,17 +94,12 @@
                 </ul>
             </nav>
 
-            <div
-                style="position: absolute; bottom: 0; left: 0; right: 0; padding: var(--space-4); background: var(--color-surface); border-top: 1px solid var(--color-border-light);">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <div
-                        style="width: 32px; height: 32px; background: var(--color-navy); border-radius: 4px; display: flex; align-items: center; justify-content: center; color: var(--color-gold); font-family: var(--font-serif); font-weight: bold; font-size: 14px;">
-                        W&M</div>
-                    <div style="display: flex; flex-direction: column;">
-                        <span
-                            style="font-size: 10px; font-weight: bold; color: var(--color-navy); text-transform: uppercase;">Statecraft
-                            Sim</span>
-                        <span style="font-size: 9px; color: var(--color-text-muted);">William & Mary</span>
+            <div class="sidebar-footer">
+                <div class="sidebar-footer-content">
+                    <div class="sidebar-footer-mark">W&M</div>
+                    <div class="sidebar-footer-text">
+                        <span class="sidebar-footer-title">Statecraft Sim</span>
+                        <span class="sidebar-footer-subtitle">William & Mary</span>
                     </div>
                 </div>
             </div>
