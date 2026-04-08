@@ -30,9 +30,9 @@
         }
     </style>
   <script type="module" crossorigin src="/assets/supabase-BQbgwcOn.js"></script>
-  <script type="module" crossorigin src="/assets/main-DfhcqhFo.js"></script>
-  <script type="module" crossorigin src="/assets/formatting-Cslb2jlO.js"></script>
-  <script type="module" crossorigin src="/assets/notetaker-ZPA9NQDP.js"></script>
+  <script type="module" crossorigin src="/assets/main-Sna_XDJf.js"></script>
+  <script type="module" crossorigin src="/assets/formatting-BZ3CiXq9.js"></script>
+  <script type="module" crossorigin src="/assets/notetaker-D2nCqZxd.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/main-BIPW7hAd.css">
   <link rel="stylesheet" crossorigin href="/assets/grid-DxNJswXH.css">
   <link rel="stylesheet" crossorigin href="/assets/sidebar-BmVTRCK5.css">
@@ -151,12 +151,22 @@
         <!-- Main Content -->
         <main class="main-content" id="main-content">
             <div class="page-container">
+                <div
+                    id="notetakerScopeNotice"
+                    class="card card-bordered"
+                    style="padding: var(--space-4); margin-bottom: var(--space-4);"
+                    role="status"
+                    aria-live="polite"
+                >
+                    Move notes are saved per notetaker seat. Quick captures append shared entries for the whole team.
+                </div>
+
                 <!-- Quick Capture Section -->
                 <section id="captureSection" class="content-section">
                     <div class="section-header">
                         <div class="section-title-wrapper">
                             <h2 class="section-title">Quick Capture</h2>
-                            <p class="section-description">Record observations, moments, and quotes in real-time</p>
+                            <p class="section-description">Append observations, moments, and quotes as separate shared entries.</p>
                         </div>
                     </div>
 
@@ -183,6 +193,7 @@
                             <div class="form-group">
                                 <label class="form-label" for="captureContent">Content</label>
                                 <textarea id="captureContent" class="form-input form-textarea" rows="4" placeholder="Enter your observation..."></textarea>
+                                <p class="form-hint" id="captureScopeHint">Each capture is appended with your notetaker seat and never replaces another observation.</p>
                             </div>
 
                             <button type="submit" class="btn btn-primary">Save Observation</button>
@@ -210,6 +221,7 @@
                     </div>
 
                     <div class="section-body">
+                        <p class="text-sm text-gray-500 mb-3" id="dynamicsScopeHint">These fields save to your own move notes. Other notetakers keep separate copies.</p>
                         <form id="dynamicsForm">
                             <div class="section-grid section-grid-2">
                                 <div class="card card-bordered" style="padding: var(--space-4);">
@@ -275,6 +287,7 @@
                     </div>
 
                     <div class="section-body">
+                        <p class="text-sm text-gray-500 mb-3" id="allianceScopeHint">Use this space for your seat-specific alliance summary. It will not replace another notetaker's alliance notes.</p>
                         <form id="allianceForm">
                             <div class="card card-bordered" style="padding: var(--space-4);">
                                 <h3 class="text-base font-semibold mb-3">External Factors</h3>
