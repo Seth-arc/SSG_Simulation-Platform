@@ -260,7 +260,9 @@ class SyncService {
                     actionsStore.loadActions(),
                     requestsStore.loadRequests(),
                     timelineStore.loadEvents(),
-                    participantsStore.loadParticipants(),
+                    participantsStore.loadParticipants({
+                        tolerateError: true
+                    }),
                     communicationsStore.loadCommunications()
                 ]);
 

@@ -98,6 +98,64 @@ describe('database live-demo seat contract', () => {
         });
     });
 
+    it('allows an initial public seat claim without prior session access while keeping protected participant RPCs locked down', async () => {
+        const { sessionStore, database } = await loadModules();
+        setClientIdentity(sessionStore, 'client-operator');
+        await database.authorizeOperatorAccess({
+            surface: 'gamemaster',
+            accessCode: 'admin2025',
+            operatorName: 'GM Test'
+        });
+
+        const session = await database.createSession({
+            name: 'Guarded Participant Session',
+            session_code: 'GUARD2026'
+        });
+
+        setClientIdentity(sessionStore, 'client-public-a');
+
+        await expect(
+            database.releaseStaleParticipantSeats(session.id)
+        ).rejects.toMatchObject({
+            name: 'DatabaseError',
+            message: 'Session access is required.'
+        });
+
+        await expect(
+            database.getActiveParticipants(session.id)
+        ).rejects.toMatchObject({
+            name: 'DatabaseError',
+            message: 'Session access is required.'
+        });
+
+        const claimedSeat = await database.claimParticipantSeat(session.id, 'blue_facilitator', 'Morgan');
+        expect(claimedSeat).toMatchObject({
+            session_id: session.id,
+            role: 'blue_facilitator',
+            display_name: 'Morgan',
+            client_id: 'client-public-a',
+            claim_status: 'claimed',
+            is_active: true
+        });
+
+        await expect(database.getActiveParticipants(session.id)).resolves.toEqual([
+            expect.objectContaining({
+                id: claimedSeat.id,
+                role: 'blue_facilitator',
+                display_name: 'Morgan'
+            })
+        ]);
+
+        setClientIdentity(sessionStore, 'client-public-b');
+
+        await expect(
+            database.getActiveParticipants(session.id)
+        ).rejects.toMatchObject({
+            name: 'DatabaseError',
+            message: 'Session access is required.'
+        });
+    });
+
     it('rejects duplicate claims when the seat is already full', async () => {
         const { sessionStore, database } = await loadModules();
         setClientIdentity(sessionStore, 'client-seat-a');

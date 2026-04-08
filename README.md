@@ -119,6 +119,8 @@ Suggested rehearsal order:
 Validate these manually against the real backend because the automated suite does not fully cover them:
 
 - Anonymous browser identity bootstrap on the deployed Pages build.
+- Public facilitator, notetaker, and observer joins should succeed without ever returning `Session access is required.` If they do, reapply the current `data/2026-04-08_facilitator_join_session_access_fix.sql` from this repo before retrying.
+- If the live backend returns `function public.release_stale_session_role_seats(uuid, integer) is not unique`, the older join hotfix created an overloaded function. Reapply the current `data/2026-04-08_facilitator_join_session_access_fix.sql`; it drops the bad overload and replaces it with the internal `release_stale_session_role_seats_internal` helper.
 - Server-side RPC and RLS enforcement for:
   - operator authorization
   - join-by-code lookup

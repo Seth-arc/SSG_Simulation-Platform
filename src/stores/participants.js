@@ -59,6 +59,9 @@ class ParticipantsStore {
 
         /** @type {Function|null} */
         this.pagehideHandler = null;
+
+        /** @type {Error|null} */
+        this.lastLoadError = null;
     }
 
     /**
@@ -77,42 +80,55 @@ class ParticipantsStore {
         this.currentParticipantId = participantId || sessionStore.getSessionParticipantId?.() || null;
         logger.info('Initializing participants store for session:', sessionId);
 
-        try {
-            await this.loadParticipants();
-            this.initialized = true;
+        await this.loadParticipants({
+            tolerateError: true
+        });
 
-            // Start heartbeat if we have a current participant
-            if (this.currentParticipantId) {
-                this.startHeartbeat();
-            }
+        this.initialized = true;
 
-            // Start inactive participant cleanup
-            this.startCleanup();
-
-            this.notify('initialized', this.participants);
-            return this.participants;
-        } catch (err) {
-            logger.error('Failed to initialize participants store:', err);
-            throw err;
+        // Start heartbeat if we have a current participant, even if roster loading failed.
+        if (this.currentParticipantId) {
+            this.startHeartbeat();
         }
+
+        // Start inactive participant cleanup
+        this.startCleanup();
+
+        this.notify('initialized', this.participants);
+
+        if (this.lastLoadError) {
+            logger.warn('Participants store initialized without a roster snapshot:', this.lastLoadError);
+        }
+
+        return this.participants;
     }
 
     /**
      * Load all participants for the current session
      * @returns {Promise<void>}
      */
-    async loadParticipants() {
+    async loadParticipants({ tolerateError = false } = {}) {
         if (!this.sessionId) {
-            return;
+            return [];
         }
 
         try {
             const data = await database.getActiveParticipants(this.sessionId);
 
             this.participants = data || [];
+            this.lastLoadError = null;
             logger.info(`Loaded ${this.participants.length} participants`);
             this.notify('loaded', this.participants);
+            return this.participants;
         } catch (err) {
+            this.lastLoadError = err;
+
+            if (tolerateError) {
+                logger.warn('Failed to load participants. Continuing without a roster snapshot:', err);
+                this.notify('load_failed', err);
+                return this.participants;
+            }
+
             logger.error('Failed to load participants:', err);
             throw err;
         }
@@ -540,6 +556,7 @@ class ParticipantsStore {
         this.initialized = false;
         this.sessionId = null;
         this.currentParticipantId = null;
+        this.lastLoadError = null;
         this.notify('reset', []);
         logger.info('Participants store reset');
     }

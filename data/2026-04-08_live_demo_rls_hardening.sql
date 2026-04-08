@@ -1076,7 +1076,7 @@ AS $$
     END
 $$;
 
-CREATE OR REPLACE FUNCTION public.release_stale_session_role_seats(
+CREATE OR REPLACE FUNCTION public.release_stale_session_role_seats_internal(
     requested_session_id UUID,
     requested_timeout_seconds INTEGER DEFAULT 90
 )
@@ -1092,13 +1092,6 @@ BEGIN
     IF requested_session_id IS NULL THEN
         RAISE EXCEPTION 'Session ID is required.'
             USING ERRCODE = '22023';
-    END IF;
-
-    IF auth.uid() IS NOT NULL
-       AND NOT public.live_demo_can_read_session(requested_session_id)
-       AND NOT public.live_demo_has_operator_grant('whitecell', requested_session_id) THEN
-        RAISE EXCEPTION 'Session access is required.'
-            USING ERRCODE = '42501';
     END IF;
 
     WITH released_rows AS (
@@ -1119,6 +1112,35 @@ BEGIN
     FROM released_rows;
 
     RETURN COALESCE(released_count, 0);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.release_stale_session_role_seats(
+    requested_session_id UUID,
+    requested_timeout_seconds INTEGER DEFAULT 90
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF requested_session_id IS NULL THEN
+        RAISE EXCEPTION 'Session ID is required.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF auth.uid() IS NOT NULL
+       AND NOT public.live_demo_can_read_session(requested_session_id)
+       AND NOT public.live_demo_has_operator_grant('whitecell', requested_session_id) THEN
+        RAISE EXCEPTION 'Session access is required.'
+            USING ERRCODE = '42501';
+    END IF;
+
+    RETURN public.release_stale_session_role_seats_internal(
+        requested_session_id,
+        requested_timeout_seconds
+    );
 END;
 $$;
 
@@ -1253,7 +1275,10 @@ BEGIN
     END IF;
 
     PERFORM pg_advisory_xact_lock(hashtext(requested_session_id::TEXT || ':' || normalized_role));
-    PERFORM public.release_stale_session_role_seats(requested_session_id, normalized_timeout_seconds);
+    PERFORM public.release_stale_session_role_seats_internal(
+        requested_session_id,
+        normalized_timeout_seconds
+    );
 
     INSERT INTO public.participants (
         auth_user_id,
@@ -1762,6 +1787,7 @@ REVOKE ALL ON FUNCTION public.operator_answer_request(UUID, TEXT, TIMESTAMPTZ) F
 REVOKE ALL ON FUNCTION public.operator_send_communication(UUID, TEXT, TEXT, TEXT, TEXT, UUID) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.lookup_joinable_session_by_code(TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.get_session_role_seat_limit(TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.release_stale_session_role_seats_internal(UUID, INTEGER) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.release_stale_session_role_seats(UUID, INTEGER) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.list_active_session_participants(UUID, INTEGER) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.claim_session_role_seat(UUID, TEXT, TEXT, TEXT, INTEGER) FROM PUBLIC;
@@ -1789,5 +1815,6 @@ COMMENT ON FUNCTION public.operator_update_game_state(UUID, INTEGER, INTEGER, IN
 COMMENT ON FUNCTION public.operator_adjudicate_action(UUID, TEXT, TEXT, TIMESTAMPTZ) IS 'Protected White Cell RPC for adjudication writes.';
 COMMENT ON FUNCTION public.operator_answer_request(UUID, TEXT, TIMESTAMPTZ) IS 'Protected White Cell RPC for RFI responses.';
 COMMENT ON FUNCTION public.operator_send_communication(UUID, TEXT, TEXT, TEXT, TEXT, UUID) IS 'Protected White Cell RPC for operator-only communication writes.';
+COMMENT ON FUNCTION public.release_stale_session_role_seats_internal(UUID, INTEGER) IS 'Internal live-demo seat cleanup helper used by claim_session_role_seat before a participant has session read access.';
 
 COMMIT;

@@ -414,6 +414,17 @@ function liveDemoCanReadSession(state, authUserId, sessionId) {
     );
 }
 
+function canReleaseStaleSessionRoleSeats(state, authUserId, sessionId) {
+    if (!authUserId || !sessionId) {
+        return false;
+    }
+
+    return Boolean(
+        liveDemoCanReadSession(state, authUserId, sessionId)
+        || liveDemoHasOperatorGrant(state, authUserId, 'whitecell', sessionId)
+    );
+}
+
 function liveDemoCanWriteSession(state, authUserId, sessionId) {
     if (!liveDemoCanReadSession(state, authUserId, sessionId)) {
         return false;
@@ -942,8 +953,16 @@ function listActiveSessionParticipants(state, {
     requested_session_id,
     requested_timeout_seconds = 90
 }) {
+    const authUserId = getCurrentAuthUserId();
     if (!requested_session_id) {
         return { data: [], error: null };
+    }
+
+    if (!liveDemoCanReadSession(state, authUserId, requested_session_id)) {
+        return {
+            data: null,
+            error: { message: 'Session access is required.' }
+        };
     }
 
     releaseStaleSessionRoleSeats(state, requested_session_id, requested_timeout_seconds);
@@ -1442,6 +1461,15 @@ export function createE2EMockSupabaseClient() {
 
             if (functionName === 'release_stale_session_role_seats') {
                 const state = readMockState();
+                const authUserId = getCurrentAuthUserId();
+
+                if (!canReleaseStaleSessionRoleSeats(state, authUserId, params?.requested_session_id)) {
+                    return {
+                        data: null,
+                        error: { message: 'Session access is required.' }
+                    };
+                }
+
                 const released = releaseStaleSessionRoleSeats(
                     state,
                     params?.requested_session_id,
