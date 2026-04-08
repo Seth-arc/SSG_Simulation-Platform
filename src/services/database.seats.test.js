@@ -1,4 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+    TEAM_OPTIONS,
+    ROLE_SURFACES,
+    WHITE_CELL_OPERATOR_ROLES,
+    buildTeamRole,
+    buildWhiteCellOperatorRole
+} from '../core/teamContext.js';
 
 class MemoryStorage {
     constructor() {
@@ -46,6 +53,51 @@ function setClientIdentity(sessionStore, clientId, { resetAuth = true } = {}) {
     localStorage.setItem('esg_client_id', clientId);
     sessionStore.init();
 }
+
+function restoreClientIdentity(sessionStore, clientId, authSession) {
+    sessionStore.clearAll();
+    localStorage.setItem('esg_e2e_auth_session', authSession);
+    localStorage.setItem('esg_client_id', clientId);
+    sessionStore.init();
+}
+
+const ALL_TEAM_ROLE_CASES = [
+    ...TEAM_OPTIONS.flatMap((team) => ([
+        {
+            label: `${team.id} facilitator`,
+            role: buildTeamRole(team.id, ROLE_SURFACES.FACILITATOR),
+            teamId: team.id,
+            requiresWhiteCellGrant: false
+        },
+        {
+            label: `${team.id} notetaker`,
+            role: buildTeamRole(team.id, ROLE_SURFACES.NOTETAKER),
+            teamId: team.id,
+            requiresWhiteCellGrant: false
+        },
+        {
+            label: `${team.id} whitecell lead`,
+            role: buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.LEAD),
+            teamId: team.id,
+            requiresWhiteCellGrant: true,
+            retainsProtectedSessionAccess: true
+        },
+        {
+            label: `${team.id} whitecell support`,
+            role: buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.SUPPORT),
+            teamId: team.id,
+            requiresWhiteCellGrant: true,
+            retainsProtectedSessionAccess: true
+        }
+    ])),
+    {
+        label: 'observer',
+        role: 'viewer',
+        teamId: null,
+        requiresWhiteCellGrant: false,
+        retainsProtectedSessionAccess: false
+    }
+];
 
 describe('database live-demo seat contract', () => {
     beforeEach(() => {
@@ -249,5 +301,136 @@ describe('database live-demo seat contract', () => {
             claim_status: 'rejoined',
             is_active: true
         });
+    });
+
+    it('allows a stale seat holder to recover their seat with heartbeat even after public session access has dropped', async () => {
+        const { sessionStore, database } = await loadModules();
+        setClientIdentity(sessionStore, 'client-heartbeat-a');
+        await database.authorizeOperatorAccess({
+            surface: 'gamemaster',
+            accessCode: 'admin2025',
+            operatorName: 'GM Test'
+        });
+
+        const session = await database.createSession({
+            name: 'Heartbeat Recovery Session',
+            session_code: 'HBRT2026'
+        });
+
+        setClientIdentity(sessionStore, 'client-heartbeat-b');
+        const claimedSeat = await database.claimParticipantSeat(session.id, 'blue_facilitator', 'Morgan');
+        const participantAuthSession = localStorage.getItem('esg_e2e_auth_session');
+
+        vi.setSystemTime(new Date('2026-04-08T10:02:00.000Z'));
+
+        setClientIdentity(sessionStore, 'client-heartbeat-c');
+        await database.authorizeOperatorAccess({
+            surface: 'gamemaster',
+            accessCode: 'admin2025',
+            operatorName: 'GM Cleanup'
+        });
+        await expect(database.releaseStaleParticipantSeats(session.id)).resolves.toBe(1);
+
+        sessionStore.clearAll();
+        localStorage.setItem('esg_e2e_auth_session', participantAuthSession);
+        localStorage.setItem('esg_client_id', 'client-heartbeat-b');
+        sessionStore.init();
+
+        await expect(
+            database.releaseStaleParticipantSeats(session.id)
+        ).rejects.toMatchObject({
+            name: 'DatabaseError',
+            message: 'Session access is required.'
+        });
+
+        const refreshedSeat = await database.updateHeartbeat(session.id, claimedSeat.id);
+        expect(refreshedSeat).toMatchObject({
+            id: claimedSeat.id,
+            role: 'blue_facilitator',
+            display_name: 'Morgan',
+            is_active: true
+        });
+
+        await expect(database.getActiveParticipants(session.id)).resolves.toEqual([
+            expect.objectContaining({
+                id: claimedSeat.id,
+                role: 'blue_facilitator',
+                display_name: 'Morgan'
+            })
+        ]);
+    });
+
+    it('applies stale-seat heartbeat recovery to every shipped live-demo role across all teams', async () => {
+        const { sessionStore, database } = await loadModules();
+
+        for (const [index, roleCase] of ALL_TEAM_ROLE_CASES.entries()) {
+            setClientIdentity(sessionStore, `client-gm-matrix-${index}`);
+            await database.authorizeOperatorAccess({
+                surface: 'gamemaster',
+                accessCode: 'admin2025',
+                operatorName: `GM Matrix ${index}`
+            });
+
+            const session = await database.createSession({
+                name: `Role Matrix Session ${index + 1}`,
+                session_code: `MAT${String(index + 1).padStart(2, '0')}A`
+            });
+
+            const participantClientId = `client-role-${index}`;
+            setClientIdentity(sessionStore, participantClientId);
+
+            if (roleCase.requiresWhiteCellGrant) {
+                await database.authorizeOperatorAccess({
+                    surface: 'whitecell',
+                    accessCode: 'admin2025',
+                    sessionId: session.id,
+                    teamId: roleCase.teamId,
+                    role: roleCase.role,
+                    operatorName: `${roleCase.label} operator`
+                });
+            }
+
+            const claimedSeat = await database.claimParticipantSeat(
+                session.id,
+                roleCase.role,
+                `${roleCase.label} participant`
+            );
+            const participantAuthSession = localStorage.getItem('esg_e2e_auth_session');
+
+            vi.setSystemTime(new Date(Date.now() + 120000));
+
+            setClientIdentity(sessionStore, `client-gm-cleanup-${index}`);
+            await database.authorizeOperatorAccess({
+                surface: 'gamemaster',
+                accessCode: 'admin2025',
+                operatorName: `GM Cleanup ${index}`
+            });
+            await expect(database.releaseStaleParticipantSeats(session.id)).resolves.toBe(1);
+
+            restoreClientIdentity(sessionStore, participantClientId, participantAuthSession);
+
+            if (roleCase.retainsProtectedSessionAccess) {
+                await expect(database.releaseStaleParticipantSeats(session.id)).resolves.toBe(0);
+            } else {
+                await expect(database.releaseStaleParticipantSeats(session.id)).rejects.toMatchObject({
+                    name: 'DatabaseError',
+                    message: 'Session access is required.'
+                });
+            }
+
+            const refreshedSeat = await database.updateHeartbeat(session.id, claimedSeat.id);
+            expect(refreshedSeat).toMatchObject({
+                id: claimedSeat.id,
+                role: roleCase.role,
+                is_active: true
+            });
+
+            const disconnectedSeat = await database.disconnectParticipant(session.id, claimedSeat.id);
+            expect(disconnectedSeat).toMatchObject({
+                id: claimedSeat.id,
+                role: roleCase.role,
+                is_active: false
+            });
+        }
     });
 });

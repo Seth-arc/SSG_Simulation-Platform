@@ -130,12 +130,24 @@ export async function createIsolatedActorPage(context, actorName, { resetBackend
     return page;
 }
 
+export async function openOperatorAccessSection(page) {
+    const operatorAccessSection = page.locator('#operatorAccessSection');
+    await expect(operatorAccessSection).toBeVisible();
+
+    if (!(await operatorAccessSection.evaluate((element) => element.hasAttribute('open')))) {
+        await operatorAccessSection.locator('summary').click();
+    }
+
+    await expect(page.locator('#operatorAccessCode')).toBeVisible();
+}
+
 export async function authorizeGameMaster(page, {
     displayName = 'Game Master Operator',
     operatorAccessCode = OPERATOR_ACCESS_CODE
 } = {}) {
     await page.goto('/');
     await page.locator('#displayName').fill(displayName);
+    await openOperatorAccessSection(page);
     await page.locator('#operatorAccessCode').fill(operatorAccessCode);
     await page.locator('#operatorGameMasterBtn').click();
     await page.waitForURL(/master\.html/);
@@ -171,8 +183,8 @@ export async function joinPublicParticipant(page, {
     await page.goto('/');
     await page.locator('#sessionCode').fill(sessionCode);
     await page.locator('#displayName').fill(displayName);
-    await page.locator(`.team-option[data-team="${team}"]`).click();
-    await page.locator(`.role-option[data-role-surface="${roleSurface}"]`).click();
+    await page.locator(`.chip[data-team="${team}"]`).click();
+    await page.locator(`.chip[data-role-surface="${roleSurface}"]`).click();
     await page.getByRole('button', { name: 'Establish Connection' }).click();
     await page.waitForURL(resolveExpectedUrlPattern(roleSurface));
 }
@@ -181,8 +193,8 @@ export async function expectJoinFailure(page, joinOptions, expectedMessage) {
     await page.goto('/');
     await page.locator('#sessionCode').fill(joinOptions.sessionCode);
     await page.locator('#displayName').fill(joinOptions.displayName);
-    await page.locator(`.team-option[data-team="${joinOptions.team || 'blue'}"]`).click();
-    await page.locator(`.role-option[data-role-surface="${joinOptions.roleSurface || 'facilitator'}"]`).click();
+    await page.locator(`.chip[data-team="${joinOptions.team || 'blue'}"]`).click();
+    await page.locator(`.chip[data-role-surface="${joinOptions.roleSurface || 'facilitator'}"]`).click();
     await page.getByRole('button', { name: 'Establish Connection' }).click();
 
     await expect(page.locator('#joinForm')).toBeVisible();
@@ -199,7 +211,8 @@ export async function authorizeWhiteCell(page, {
     await page.goto('/');
     await page.locator('#sessionCode').fill(sessionCode);
     await page.locator('#displayName').fill(displayName);
-    await page.locator(`.team-option[data-team="${team}"]`).click();
+    await page.locator(`.chip[data-team="${team}"]`).click();
+    await openOperatorAccessSection(page);
     await page.locator('#operatorAccessCode').fill(operatorAccessCode);
 
     const accessButtonId = operatorRole === 'support'

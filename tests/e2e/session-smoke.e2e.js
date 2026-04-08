@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 import { dumpE2EMockBackend, enableE2EMockBackend } from './support/mockBackend.js';
+import { openOperatorAccessSection } from './support/liveDemoHarness.js';
 
 test('@smoke session creation, role join, action submit, and White Cell adjudication', async ({ browser }) => {
     const context = await browser.newContext();
@@ -15,6 +16,7 @@ test('@smoke session creation, role join, action submit, and White Cell adjudica
     await test.step('create a session from the control panel', async () => {
         await page.goto('/');
         await page.locator('#displayName').fill('Game Master Operator');
+        await openOperatorAccessSection(page);
         await page.locator('#operatorAccessCode').fill(operatorAccessCode);
         await page.locator('#operatorGameMasterBtn').click();
         await page.waitForURL(/master\.html/);
@@ -36,8 +38,8 @@ test('@smoke session creation, role join, action submit, and White Cell adjudica
         await page.goto('/');
         await page.locator('#sessionCode').fill(sessionCode);
         await page.locator('#displayName').fill('Blue Lead');
-        await page.locator('.team-option[data-team="blue"]').click();
-        await page.locator('.role-option[data-role-surface="facilitator"]').click();
+        await page.locator('.chip[data-team="blue"]').click();
+        await page.locator('.chip[data-role-surface="facilitator"]').click();
         await page.getByRole('button', { name: 'Establish Connection' }).click();
 
         await page.waitForURL(/facilitator\.html/);
@@ -69,7 +71,8 @@ test('@smoke session creation, role join, action submit, and White Cell adjudica
 
         await page.locator('#sessionCode').fill(sessionCode);
         await page.locator('#displayName').fill('White Cell Lead');
-        await page.locator('.team-option[data-team="blue"]').click();
+        await page.locator('.chip[data-team="blue"]').click();
+        await openOperatorAccessSection(page);
         await page.locator('#operatorAccessCode').fill(operatorAccessCode);
         await page.locator('#operatorWhiteCellLeadBtn').click();
 

@@ -19,12 +19,15 @@ If either value is missing or left as a placeholder, the app blocks startup with
   - Not sufficient proof of live-demo readiness on its own.
 - `npm run test:e2e:live-demo`
   - Multi-actor topology suite for the real demo seat model.
-  - Covers facilitator, notetaker, observer, White Cell lead, White Cell support, seat contention, and recovery paths.
+  - Covers facilitator, notetaker, observer, White Cell lead, White Cell support, seat contention, recovery paths, and a browser-level all-team role matrix.
+- `npm run test:e2e:live-demo:matrix`
+  - Targeted browser-level role matrix.
+  - Verifies blue, red, and green facilitator, notetaker, observer, White Cell lead, and White Cell support joins survive bootstrap, reload, and operator-roster visibility.
 - `npm run test:e2e`
   - Full automated gate.
   - Run this before treating a build as demo-ready.
 - `npm run test:e2e:rehearsal`
-  - Alias for the live-demo topology suite when you want the rehearsal gate explicitly.
+  - Alias for the full live-demo gate when you want the rehearsal command explicitly.
 
 Playwright serves the built `dist/` output through `npm run serve:test`. If you are validating fresh UI changes, rebuild before running the suite so `dist/` matches the current source.
 
@@ -50,6 +53,7 @@ Suggested rehearsal order:
 
 1. Run `npm run test:e2e:smoke`.
 2. Run `npm run test:e2e:live-demo`.
+   - This now includes the all-team role matrix in addition to the one-team topology flow.
 3. On the live Pages target, have the Game Master create one session and distribute the session code.
 4. Join one facilitator, then four notetakers, then five observers on the same team.
 5. Join White Cell Lead and White Cell Support with the operator access code.
@@ -121,6 +125,8 @@ Validate these manually against the real backend because the automated suite doe
 - Anonymous browser identity bootstrap on the deployed Pages build.
 - Public facilitator, notetaker, and observer joins should succeed without ever returning `Session access is required.` If they do, reapply the current `data/2026-04-08_facilitator_join_session_access_fix.sql` from this repo before retrying.
 - If the live backend returns `function public.release_stale_session_role_seats(uuid, integer) is not unique`, the older join hotfix created an overloaded function. Reapply the current `data/2026-04-08_facilitator_join_session_access_fix.sql`; it drops the bad overload and replaces it with the internal `release_stale_session_role_seats_internal` helper.
+- If facilitator or notetaker heartbeats fail with `heartbeat_session_role_seat` 403 / `Session access is required.`, the live backend is still running the older heartbeat/disconnect function bodies. Reapply the current `data/2026-04-08_facilitator_join_session_access_fix.sql`; the updated patch moves heartbeat and disconnect cleanup onto the internal helper as well.
+- If `game_state` reads return `GameState not found` for an active session, the session was created without its `game_state` row. Reapply the current `data/2026-04-08_facilitator_join_session_access_fix.sql`; it now backfills missing `game_state` rows for existing sessions. Recreate the session only if the row still does not appear afterward.
 - Server-side RPC and RLS enforcement for:
   - operator authorization
   - join-by-code lookup

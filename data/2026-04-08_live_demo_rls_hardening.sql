@@ -1115,6 +1115,27 @@ BEGIN
 END;
 $$;
 
+INSERT INTO public.game_state (
+    session_id,
+    move,
+    phase,
+    timer_seconds,
+    timer_running,
+    timer_last_update
+)
+SELECT
+    s.id,
+    1,
+    1,
+    5400,
+    false,
+    NULL
+FROM public.sessions s
+LEFT JOIN public.game_state gs
+    ON gs.session_id = s.id
+WHERE gs.session_id IS NULL
+ON CONFLICT (session_id) DO NOTHING;
+
 CREATE OR REPLACE FUNCTION public.release_stale_session_role_seats(
     requested_session_id UUID,
     requested_timeout_seconds INTEGER DEFAULT 90
@@ -1415,7 +1436,10 @@ BEGIN
             USING ERRCODE = '22023';
     END IF;
 
-    PERFORM public.release_stale_session_role_seats(requested_session_id, normalized_timeout_seconds);
+    PERFORM public.release_stale_session_role_seats_internal(
+        requested_session_id,
+        normalized_timeout_seconds
+    );
 
     SELECT sp.*
     INTO seat_row
@@ -1505,7 +1529,10 @@ BEGIN
         RETURN NULL;
     END IF;
 
-    PERFORM public.release_stale_session_role_seats(requested_session_id, requested_timeout_seconds);
+    PERFORM public.release_stale_session_role_seats_internal(
+        requested_session_id,
+        requested_timeout_seconds
+    );
 
     SELECT sp.*
     INTO seat_row
@@ -1815,6 +1842,6 @@ COMMENT ON FUNCTION public.operator_update_game_state(UUID, INTEGER, INTEGER, IN
 COMMENT ON FUNCTION public.operator_adjudicate_action(UUID, TEXT, TEXT, TIMESTAMPTZ) IS 'Protected White Cell RPC for adjudication writes.';
 COMMENT ON FUNCTION public.operator_answer_request(UUID, TEXT, TIMESTAMPTZ) IS 'Protected White Cell RPC for RFI responses.';
 COMMENT ON FUNCTION public.operator_send_communication(UUID, TEXT, TEXT, TEXT, TEXT, UUID) IS 'Protected White Cell RPC for operator-only communication writes.';
-COMMENT ON FUNCTION public.release_stale_session_role_seats_internal(UUID, INTEGER) IS 'Internal live-demo seat cleanup helper used by claim_session_role_seat before a participant has session read access.';
+COMMENT ON FUNCTION public.release_stale_session_role_seats_internal(UUID, INTEGER) IS 'Internal live-demo seat cleanup helper used by claim, heartbeat, and disconnect flows when session read access may not yet be available.';
 
 COMMIT;

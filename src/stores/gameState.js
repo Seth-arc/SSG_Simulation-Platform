@@ -13,9 +13,29 @@
 import { database } from '../services/database.js';
 import { createLogger } from '../utils/logger.js';
 import { CONFIG } from '../core/config.js';
-import { ENUMS } from '../core/enums.js';
 
 const logger = createLogger('GameStateStore');
+
+function isMissingGameStateError(error) {
+    return error?.code === 'NOT_FOUND' && error?.entity === 'GameState';
+}
+
+function buildFallbackGameState(sessionId) {
+    const timestamp = new Date().toISOString();
+
+    return {
+        id: null,
+        session_id: sessionId,
+        move: 1,
+        phase: 1,
+        timer_seconds: CONFIG.DEFAULT_TIMER_SECONDS,
+        timer_running: false,
+        timer_last_update: null,
+        last_updated: timestamp,
+        updated_at: timestamp,
+        status: 'active'
+    };
+}
 
 /**
  * @typedef {Object} GameState
@@ -84,6 +104,15 @@ class GameStateStore {
 
             return this.state;
         } catch (err) {
+            if (isMissingGameStateError(err)) {
+                logger.warn(
+                    'Game state row is missing for this session. Using local defaults until the backend is backfilled.'
+                );
+                this.initialized = true;
+                this.applyServerState(buildFallbackGameState(sessionId), 'initialized');
+                return this.state;
+            }
+
             logger.error('Failed to initialize game state:', err);
             throw err;
         }
