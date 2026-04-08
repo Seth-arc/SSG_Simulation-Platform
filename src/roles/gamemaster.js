@@ -47,14 +47,15 @@ function buildFallbackBundle(session) {
 
 export function getGameMasterAccessState(sessionStoreRef = sessionStore) {
     const role = sessionStoreRef.getRole?.() || sessionStoreRef.getSessionData?.()?.role || null;
-    const allowed = role === 'white' && sessionStoreRef.hasOperatorAccess?.(
+    const cachedOperatorAccess = role === 'white' && sessionStoreRef.hasOperatorAccess?.(
         OPERATOR_SURFACES.GAME_MASTER,
         { role: 'white' }
     );
 
     return {
-        allowed,
-        role
+        allowed: role === 'white',
+        role,
+        cachedOperatorAccess
     };
 }
 
@@ -138,6 +139,19 @@ export class GameMasterController {
         if (!accessState.allowed) {
             logger.warn('Blocked direct Game Master access without operator auth');
             showToast('Game Master access requires operator authorization from the landing page.', { type: 'error' });
+            navigateToApp('index.html#operatorAccessSection', { replace: true });
+            return;
+        }
+
+        try {
+            const grant = await database.requireOperatorGrant(OPERATOR_SURFACES.GAME_MASTER, {
+                role: 'white'
+            });
+            sessionStore.setOperatorAuth(grant);
+        } catch (error) {
+            logger.warn('Blocked Game Master access after failed server verification', error);
+            sessionStore.clearOperatorAuth();
+            showToast('Game Master access requires a valid server-side operator grant.', { type: 'error' });
             navigateToApp('index.html#operatorAccessSection', { replace: true });
             return;
         }

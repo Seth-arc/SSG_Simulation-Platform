@@ -114,7 +114,8 @@ describe('White Cell DOM contract', () => {
             getRole: () => 'blue_whitecell_lead',
             hasOperatorAccess: () => false
         })).toMatchObject({
-            allowed: false,
+            allowed: true,
+            cachedOperatorAccess: false,
             sessionId: 'session-1',
             role: 'blue_whitecell_lead',
             operatorRole: 'lead'
@@ -129,6 +130,7 @@ describe('White Cell DOM contract', () => {
             hasOperatorAccess
         })).toMatchObject({
             allowed: true,
+            cachedOperatorAccess: true,
             sessionId: 'session-1',
             role: 'blue_whitecell_support',
             operatorRole: 'support'

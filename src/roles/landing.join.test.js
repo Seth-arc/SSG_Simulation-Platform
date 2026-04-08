@@ -10,6 +10,7 @@ const {
 } = vi.hoisted(() => ({
     mockDatabase: {
         lookupJoinableSessionByCode: vi.fn(),
+        authorizeOperatorAccess: vi.fn(),
         claimParticipantSeat: vi.fn(),
         getGameState: vi.fn(),
         disconnectParticipant: vi.fn(),
@@ -18,12 +19,14 @@ const {
     },
     mockSessionStore: {
         getClientId: vi.fn(() => 'client-landing-test'),
+        clear: vi.fn(),
         clearOperatorAuth: vi.fn(),
         setSessionId: vi.fn(),
         setRole: vi.fn(),
         setUserName: vi.fn(),
         setSessionData: vi.fn(),
-        setGameState: vi.fn()
+        setGameState: vi.fn(),
+        setOperatorAuth: vi.fn()
     },
     mockEnsureBrowserIdentity: vi.fn(),
     mockShowToast: vi.fn(),
@@ -215,5 +218,68 @@ describe('landing secure join flow', () => {
         });
         expect(mockDatabase.lookupJoinableSessionByCode).toHaveBeenCalledWith('LOOKUP2026');
         expect(mockDatabase.getActiveSessions).not.toHaveBeenCalled();
+    });
+
+    it('authorizes White Cell through the server-side operator grant before claiming a seat', async () => {
+        const elements = {
+            sessionCode: createElement('alpha2026'),
+            displayName: createElement('Morgan')
+        };
+
+        global.document = {
+            getElementById(id) {
+                return elements[id] || null;
+            }
+        };
+
+        mockDatabase.lookupJoinableSessionByCode.mockResolvedValue({
+            id: 'session-1',
+            name: 'Alpha Session',
+            session_code: 'ALPHA2026',
+            status: 'active'
+        });
+        mockDatabase.authorizeOperatorAccess.mockResolvedValue({
+            id: 'grant-1',
+            surface: 'whitecell',
+            sessionId: 'session-1',
+            teamId: 'blue',
+            role: 'blue_whitecell_lead',
+            operatorName: 'Morgan'
+        });
+        mockDatabase.claimParticipantSeat.mockResolvedValue({
+            id: 'session-participant-1',
+            claim_status: 'claimed'
+        });
+        mockDatabase.getGameState.mockResolvedValue({
+            move: 1,
+            phase: 1
+        });
+
+        const { LandingController } = await loadLandingModule();
+        const controller = new LandingController();
+        controller.selectedTeam = 'blue';
+        controller.redirectToRole = vi.fn();
+
+        await controller.authorizeWhiteCell('lead', 'admin2025');
+
+        expect(mockDatabase.authorizeOperatorAccess).toHaveBeenCalledWith({
+            surface: 'whitecell',
+            accessCode: 'admin2025',
+            sessionId: 'session-1',
+            teamId: 'blue',
+            role: 'blue_whitecell_lead',
+            operatorName: 'Morgan'
+        });
+        expect(mockDatabase.claimParticipantSeat).toHaveBeenCalledWith('session-1', 'blue_whitecell_lead', 'Morgan');
+        expect(mockSessionStore.setOperatorAuth).toHaveBeenCalledWith(expect.objectContaining({
+            id: 'grant-1',
+            surface: 'whitecell',
+            sessionId: 'session-1',
+            sessionCode: 'ALPHA2026',
+            teamId: 'blue',
+            role: 'blue_whitecell_lead',
+            operatorName: 'Morgan'
+        }));
+        expect(controller.redirectToRole).toHaveBeenCalledWith('blue_whitecell_lead');
     });
 });

@@ -99,7 +99,8 @@ describe('GameMaster operator access', () => {
             hasOperatorAccess: () => false
         })).toEqual({
             allowed: false,
-            role: null
+            role: null,
+            cachedOperatorAccess: false
         });
     });
 
@@ -112,7 +113,8 @@ describe('GameMaster operator access', () => {
             hasOperatorAccess
         })).toEqual({
             allowed: true,
-            role: 'white'
+            role: 'white',
+            cachedOperatorAccess: true
         });
 
         expect(hasOperatorAccess).toHaveBeenCalledWith('gamemaster', { role: 'white' });

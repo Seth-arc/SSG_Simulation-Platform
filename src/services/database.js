@@ -75,6 +75,36 @@ function normalizeParticipantSeatRecord(record = null) {
     };
 }
 
+function normalizeOperatorGrantRecord(record = null) {
+    if (!record || typeof record !== 'object') {
+        return record;
+    }
+
+    return {
+        ...record,
+        grantId: record.grantId ?? record.id ?? null,
+        operatorName: record.operatorName ?? record.operator_name ?? null,
+        sessionId: record.sessionId ?? record.session_id ?? null,
+        teamId: record.teamId ?? record.team_id ?? null,
+        grantedAt: record.grantedAt ?? record.granted_at ?? null,
+        verifiedAt: new Date().toISOString()
+    };
+}
+
+function isOperatorRequestResponseUpdate(updates = {}) {
+    return (
+        updates.status === 'answered'
+        || 'response' in updates
+        || 'responded_at' in updates
+        || 'answered_at' in updates
+    );
+}
+
+function shouldUseOperatorCommunicationPath(commData = {}) {
+    const fromRole = String(commData?.from_role || '').trim().toLowerCase();
+    return fromRole === 'white_cell';
+}
+
 async function invokeKeepaliveRpc(functionName, payload = {}) {
     const accessToken = latestAuthenticatedSession?.access_token;
     if (!CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_ANON_KEY || !accessToken) {
@@ -105,6 +135,76 @@ async function invokeKeepaliveRpc(functionName, payload = {}) {
  * Database service with CRUD operations for all tables
  */
 export const database = {
+    async authorizeOperatorAccess({
+        surface,
+        accessCode,
+        sessionId = null,
+        teamId = null,
+        role = null,
+        operatorName = null
+    } = {}) {
+        await ensureAuthenticatedBrowser();
+
+        const { data, error } = await supabase.rpc('authorize_demo_operator', {
+            requested_surface: surface,
+            requested_operator_code: accessCode,
+            requested_session_id: sessionId,
+            requested_team_id: teamId,
+            requested_role: role,
+            requested_operator_name: operatorName
+        });
+
+        if (error) {
+            throw fromSupabaseError(error, 'authorizeOperatorAccess');
+        }
+
+        return normalizeOperatorGrantRecord(data);
+    },
+
+    async getOperatorGrant(surface, {
+        sessionId = null,
+        teamId = null,
+        role = null
+    } = {}) {
+        await ensureAuthenticatedBrowser();
+
+        let query = supabase
+            .from('operator_grants')
+            .select('*')
+            .eq('surface', surface);
+
+        if (sessionId) {
+            query = query.eq('session_id', sessionId);
+        }
+
+        if (teamId) {
+            query = query.eq('team_id', teamId);
+        }
+
+        if (role) {
+            query = query.eq('role', role);
+        }
+
+        const { data, error } = await query
+            .order('granted_at', { ascending: false })
+            .maybeSingle();
+
+        if (error) {
+            throw fromSupabaseError(error, 'getOperatorGrant');
+        }
+
+        return normalizeOperatorGrantRecord(data);
+    },
+
+    async requireOperatorGrant(surface, options = {}) {
+        const grant = await this.getOperatorGrant(surface, options);
+        if (!grant) {
+            throw new DatabaseError('Operator authorization is required.', 'requireOperatorGrant');
+        }
+
+        return grant;
+    },
+
     // ==================== SESSIONS ====================
 
     /**
@@ -127,23 +227,15 @@ export const database = {
             description: sessionData.description || null
         };
 
-        const { data, error } = await supabase
-            .from('sessions')
-            .insert({
-                name: sessionData.name,
-                status: sessionData.status || 'active',
-                session_code: normalizedSessionCode,
-                metadata
-            })
-            .select()
-            .single();
+        const { data, error } = await supabase.rpc('create_live_demo_session', {
+            requested_name: sessionData.name,
+            requested_session_code: normalizedSessionCode,
+            requested_description: metadata.description
+        });
 
         if (error) {
             throw fromSupabaseError(error, 'createSession');
         }
-
-        // Also create initial game state
-        await this.createGameState(data.id);
 
         logger.info('Session created:', data.id);
         return data;
@@ -251,10 +343,9 @@ export const database = {
      */
     async deleteSession(sessionId) {
         await ensureAuthenticatedBrowser();
-        const { error } = await supabase
-            .from('sessions')
-            .delete()
-            .eq('id', sessionId);
+        const { error } = await supabase.rpc('delete_live_demo_session', {
+            requested_session_id: sessionId
+        });
 
         if (error) {
             throw fromSupabaseError(error, 'deleteSession');
@@ -341,15 +432,14 @@ export const database = {
             delete mappedUpdates.last_update;
         }
 
-        const { data, error } = await supabase
-            .from('game_state')
-            .update({
-                ...mappedUpdates,
-                last_updated: new Date().toISOString()
-            })
-            .eq('session_id', sessionId)
-            .select()
-            .single();
+        const { data, error } = await supabase.rpc('operator_update_game_state', {
+            requested_session_id: sessionId,
+            requested_move: mappedUpdates.move ?? null,
+            requested_phase: mappedUpdates.phase ?? null,
+            requested_timer_seconds: mappedUpdates.timer_seconds ?? null,
+            requested_timer_running: mappedUpdates.timer_running ?? null,
+            requested_timer_last_update: mappedUpdates.timer_last_update ?? null
+        });
 
         if (error) {
             throw fromSupabaseError(error, 'updateGameState');
@@ -753,12 +843,19 @@ export const database = {
             throw new DatabaseError('Only submitted actions can be adjudicated.', 'adjudicateAction');
         }
 
-        return this.updateAction(actionId, {
-            status: ENUMS.ACTION_STATUS.ADJUDICATED,
-            outcome: adjudication.outcome,
-            adjudication_notes: adjudication.adjudication_notes || null,
-            adjudicated_at: adjudication.adjudicated_at || new Date().toISOString()
+        await ensureAuthenticatedBrowser();
+        const { data, error } = await supabase.rpc('operator_adjudicate_action', {
+            requested_action_id: actionId,
+            requested_outcome: adjudication.outcome,
+            requested_adjudication_notes: adjudication.adjudication_notes || null,
+            requested_adjudicated_at: adjudication.adjudicated_at || new Date().toISOString()
         });
+
+        if (error) {
+            throw fromSupabaseError(error, 'adjudicateAction');
+        }
+
+        return data;
     },
 
     /**
@@ -872,6 +969,21 @@ export const database = {
      */
     async updateRequest(requestId, updates) {
         await ensureAuthenticatedBrowser();
+
+        if (isOperatorRequestResponseUpdate(updates)) {
+            const { data, error } = await supabase.rpc('operator_answer_request', {
+                requested_request_id: requestId,
+                requested_response: updates.response ?? '',
+                requested_responded_at: updates.responded_at ?? updates.answered_at ?? new Date().toISOString()
+            });
+
+            if (error) {
+                throw fromSupabaseError(error, 'updateRequest');
+            }
+
+            return data;
+        }
+
         const { data, error } = await supabase
             .from('requests')
             .update(updates)
@@ -895,6 +1007,24 @@ export const database = {
      */
     async createCommunication(commData) {
         await ensureAuthenticatedBrowser();
+
+        if (shouldUseOperatorCommunicationPath(commData)) {
+            const { data, error } = await supabase.rpc('operator_send_communication', {
+                requested_session_id: commData.session_id,
+                requested_to_role: commData.to_role || 'all',
+                requested_type: commData.type,
+                requested_content: commData.content,
+                requested_title: commData.title || null,
+                requested_linked_request_id: commData.linked_request_id || null
+            });
+
+            if (error) {
+                throw fromSupabaseError(error, 'createCommunication');
+            }
+
+            return data;
+        }
+
         const { data, error } = await supabase
             .from('communications')
             .insert({

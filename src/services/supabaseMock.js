@@ -5,6 +5,7 @@ const E2E_MOCK_AUTH_KEY = 'esg_e2e_auth_session';
 const MOCK_TABLES = [
     'sessions',
     'game_state',
+    'operator_grants',
     'participants',
     'session_participants',
     'actions',
@@ -104,6 +105,10 @@ function writeMockAuthSession(session) {
     storage.setItem(E2E_MOCK_AUTH_KEY, JSON.stringify(session));
 }
 
+function getCurrentAuthUserId() {
+    return readMockAuthSession()?.user?.id || null;
+}
+
 function nextId(state, tableName) {
     state.counters[tableName] = (state.counters[tableName] || 0) + 1;
     const normalizedName = tableName.replace(/[^a-z0-9]+/gi, '_');
@@ -143,11 +148,25 @@ function normalizeInsertRow(tableName, payload, state) {
                 last_updated: timestamp,
                 ...cloneValue(payload)
             };
+        case 'operator_grants':
+            return {
+                ...baseRow,
+                surface: null,
+                session_id: null,
+                team_id: null,
+                role: null,
+                operator_name: null,
+                auth_user_id: null,
+                granted_at: timestamp,
+                updated_at: timestamp,
+                ...cloneValue(payload)
+            };
         case 'participants':
             return {
                 ...baseRow,
                 name: null,
                 role: null,
+                auth_user_id: null,
                 updated_at: timestamp,
                 ...cloneValue(payload)
             };
@@ -285,11 +304,352 @@ function getSessionRoleSeatLimit(role = '') {
     if (/^(blue|red|green)_whitecell_support$/.test(normalizedRole)) {
         return 1;
     }
-    if (normalizedRole === 'white') {
-        return 1;
+
+    return null;
+}
+
+function getOperatorAccessCode() {
+    return String(globalThis.__ESG_OPERATOR_ACCESS_CODE__ || 'admin2025');
+}
+
+function getOperatorGrant(state, authUserId, surface) {
+    return state.tables.operator_grants.find((entry) => (
+        entry.auth_user_id === authUserId && entry.surface === surface
+    )) || null;
+}
+
+function normalizeTeamId(teamId) {
+    const normalizedTeam = String(teamId || '').trim().toLowerCase();
+    return normalizedTeam || null;
+}
+
+function getParticipantSeatForSession(state, authUserId, sessionId, { activeOnly = true } = {}) {
+    if (!authUserId || !sessionId) {
+        return null;
+    }
+
+    const participantIds = new Set(
+        state.tables.participants
+            .filter((entry) => entry.auth_user_id === authUserId)
+            .map((entry) => entry.id)
+    );
+
+    const matchingSeats = state.tables.session_participants
+        .filter((entry) => (
+            entry.session_id === sessionId
+            && participantIds.has(entry.participant_id)
+            && (!activeOnly || entry.is_active === true)
+        ))
+        .sort((left, right) => {
+            const leftTimestamp = new Date(left.updated_at || left.joined_at || 0).getTime();
+            const rightTimestamp = new Date(right.updated_at || right.joined_at || 0).getTime();
+            return rightTimestamp - leftTimestamp;
+        });
+
+    return matchingSeats[0] || null;
+}
+
+function getLiveDemoParticipantRole(state, authUserId, sessionId) {
+    const seat = getParticipantSeatForSession(state, authUserId, sessionId, { activeOnly: true });
+    return normalizeSeatRole(seat?.role || null);
+}
+
+function getLiveDemoParticipantSurface(state, authUserId, sessionId) {
+    const role = getLiveDemoParticipantRole(state, authUserId, sessionId);
+
+    if (role === 'viewer') {
+        return 'viewer';
+    }
+
+    if (/^(blue|red|green)_facilitator$/.test(role || '')) {
+        return 'facilitator';
+    }
+
+    if (/^(blue|red|green)_notetaker$/.test(role || '')) {
+        return 'notetaker';
+    }
+
+    if (/^(blue|red|green)_whitecell(_lead|_support)?$/.test(role || '')) {
+        return 'whitecell';
     }
 
     return null;
+}
+
+function getLiveDemoParticipantTeam(state, authUserId, sessionId) {
+    const role = getLiveDemoParticipantRole(state, authUserId, sessionId);
+    return role?.match(/^(blue|red|green)_/)?.[1] || null;
+}
+
+function liveDemoHasOperatorGrant(state, authUserId, surface, sessionId = null, teamId = null, role = null) {
+    const grant = getOperatorGrant(state, authUserId, String(surface || '').trim().toLowerCase());
+
+    if (!grant) {
+        return false;
+    }
+
+    if (sessionId && grant.session_id !== sessionId) {
+        return false;
+    }
+
+    if (teamId && grant.team_id !== normalizeTeamId(teamId)) {
+        return false;
+    }
+
+    if (role && grant.role !== normalizeSeatRole(String(role || '').trim())) {
+        return false;
+    }
+
+    return true;
+}
+
+function liveDemoCanReadSession(state, authUserId, sessionId) {
+    if (!authUserId || !sessionId) {
+        return false;
+    }
+
+    return Boolean(
+        getParticipantSeatForSession(state, authUserId, sessionId, { activeOnly: true })
+        || liveDemoHasOperatorGrant(state, authUserId, 'gamemaster')
+    );
+}
+
+function liveDemoCanWriteSession(state, authUserId, sessionId) {
+    if (!liveDemoCanReadSession(state, authUserId, sessionId)) {
+        return false;
+    }
+
+    return getLiveDemoParticipantSurface(state, authUserId, sessionId) !== 'viewer';
+}
+
+function liveDemoCanWriteSessionSurface(state, authUserId, sessionId, allowedSurfaces = []) {
+    return (
+        liveDemoCanWriteSession(state, authUserId, sessionId)
+        && allowedSurfaces.includes(getLiveDemoParticipantSurface(state, authUserId, sessionId))
+    );
+}
+
+function liveDemoCanWriteTeamSession(state, authUserId, sessionId, teamId, allowedSurfaces = []) {
+    return (
+        liveDemoCanWriteSessionSurface(state, authUserId, sessionId, allowedSurfaces)
+        && getLiveDemoParticipantTeam(state, authUserId, sessionId) === normalizeTeamId(teamId)
+    );
+}
+
+function canReadTableRow(state, tableName, row, authUserId) {
+    if (tableName === 'operator_grants') {
+        return Boolean(authUserId && row.auth_user_id === authUserId);
+    }
+
+    if (!authUserId) {
+        return false;
+    }
+
+    if (tableName === 'participants') {
+        if (row.auth_user_id === authUserId) {
+            return true;
+        }
+
+        return state.tables.session_participants.some((seat) => (
+            seat.participant_id === row.id
+            && liveDemoCanReadSession(state, authUserId, seat.session_id)
+        ));
+    }
+
+    if (tableName === 'sessions') {
+        return liveDemoCanReadSession(state, authUserId, row.id);
+    }
+
+    if (tableName === 'session_participants' || tableName === 'game_state' || tableName === 'actions'
+        || tableName === 'requests' || tableName === 'communications' || tableName === 'timeline'
+        || tableName === 'notetaker_data') {
+        return liveDemoCanReadSession(state, authUserId, row.session_id);
+    }
+
+    return true;
+}
+
+function canInsertTableRow(state, tableName, row, authUserId) {
+    switch (tableName) {
+        case 'actions':
+            return liveDemoCanWriteTeamSession(
+                state,
+                authUserId,
+                row.session_id,
+                row.team,
+                ['facilitator']
+            );
+        case 'requests':
+            return liveDemoCanWriteTeamSession(
+                state,
+                authUserId,
+                row.session_id,
+                row.team,
+                ['facilitator']
+            );
+        case 'timeline':
+            return liveDemoCanWriteSession(state, authUserId, row.session_id);
+        case 'notetaker_data':
+            return liveDemoCanWriteTeamSession(
+                state,
+                authUserId,
+                row.session_id,
+                row.team,
+                ['notetaker']
+            );
+        default:
+            return false;
+    }
+}
+
+function canUpdateTableRow(state, tableName, currentRow, nextRow, authUserId) {
+    switch (tableName) {
+        case 'actions':
+            return (
+                liveDemoCanWriteTeamSession(state, authUserId, currentRow.session_id, currentRow.team, ['facilitator'])
+                && liveDemoCanWriteTeamSession(state, authUserId, nextRow.session_id, nextRow.team, ['facilitator'])
+                && nextRow.status !== 'adjudicated'
+            );
+        case 'requests':
+            return (
+                liveDemoCanWriteTeamSession(state, authUserId, currentRow.session_id, currentRow.team, ['facilitator'])
+                && liveDemoCanWriteTeamSession(state, authUserId, nextRow.session_id, nextRow.team, ['facilitator'])
+                && nextRow.status !== 'answered'
+            );
+        case 'notetaker_data':
+            return (
+                liveDemoCanWriteTeamSession(state, authUserId, currentRow.session_id, currentRow.team, ['notetaker'])
+                && liveDemoCanWriteTeamSession(state, authUserId, nextRow.session_id, nextRow.team, ['notetaker'])
+            );
+        default:
+            return false;
+    }
+}
+
+function buildRlsError(tableName) {
+    return {
+        code: '42501',
+        message: `new row violates row-level security policy for table "${tableName}"`
+    };
+}
+
+function authorizeDemoOperator(state, {
+    requested_surface,
+    requested_operator_code,
+    requested_session_id,
+    requested_team_id,
+    requested_role,
+    requested_operator_name
+}) {
+    const authUserId = getCurrentAuthUserId();
+    const normalizedSurface = String(requested_surface || '').trim().toLowerCase();
+    const normalizedRole = normalizeSeatRole(String(requested_role || '').trim()) || null;
+    const normalizedTeam = String(requested_team_id || '').trim().toLowerCase() || null;
+
+    if (!authUserId) {
+        return { data: null, error: { message: 'Browser identity is required before operator authorization.' } };
+    }
+
+    if (String(requested_operator_code || '').trim() !== getOperatorAccessCode()) {
+        return { data: null, error: { message: 'Invalid operator access code.' } };
+    }
+
+    if (!['gamemaster', 'whitecell'].includes(normalizedSurface)) {
+        return { data: null, error: { message: 'Unsupported operator surface.' } };
+    }
+
+    if (normalizedSurface === 'whitecell') {
+        const session = state.tables.sessions.find((entry) => (
+            entry.id === requested_session_id && entry.status === 'active'
+        ));
+
+        if (!session) {
+            return { data: null, error: { message: 'This session is not currently joinable.' } };
+        }
+    }
+
+    state.tables.operator_grants = state.tables.operator_grants.filter((entry) => !(
+        entry.auth_user_id === authUserId && entry.surface === normalizedSurface
+    ));
+
+    const grant = normalizeInsertRow('operator_grants', {
+        auth_user_id: authUserId,
+        surface: normalizedSurface,
+        session_id: normalizedSurface === 'whitecell' ? requested_session_id : null,
+        team_id: normalizedSurface === 'whitecell' ? normalizedTeam : null,
+        role: normalizedSurface === 'whitecell' ? normalizedRole : 'white',
+        operator_name: String(requested_operator_name || '').trim() || null
+    }, state);
+
+    state.tables.operator_grants.push(grant);
+
+    return {
+        data: cloneValue(grant),
+        error: null
+    };
+}
+
+function createLiveDemoSession(state, {
+    requested_name,
+    requested_session_code,
+    requested_description
+}) {
+    const authUserId = getCurrentAuthUserId();
+    const grant = getOperatorGrant(state, authUserId, 'gamemaster');
+
+    if (!grant) {
+        return { data: null, error: { message: 'Game Master authorization is required.' } };
+    }
+
+    const session = normalizeInsertRow('sessions', {
+        name: String(requested_name || '').trim(),
+        status: 'active',
+        session_code: String(requested_session_code || '').trim().toUpperCase(),
+        metadata: {
+            session_code: String(requested_session_code || '').trim().toUpperCase(),
+            description: String(requested_description || '').trim() || null
+        }
+    }, state);
+
+    state.tables.sessions.push(session);
+    state.tables.game_state.push(normalizeInsertRow('game_state', {
+        session_id: session.id,
+        move: 1,
+        phase: 1,
+        timer_seconds: 5400,
+        timer_running: false,
+        timer_last_update: null
+    }, state));
+
+    return {
+        data: cloneValue(session),
+        error: null
+    };
+}
+
+function deleteLiveDemoSession(state, {
+    requested_session_id
+}) {
+    const authUserId = getCurrentAuthUserId();
+    const grant = getOperatorGrant(state, authUserId, 'gamemaster');
+
+    if (!grant) {
+        return { data: null, error: { message: 'Game Master authorization is required.' } };
+    }
+
+    state.tables.sessions = state.tables.sessions.filter((entry) => entry.id !== requested_session_id);
+    Object.keys(state.tables).forEach((tableName) => {
+        if (tableName === 'sessions' || tableName === 'participants') {
+            return;
+        }
+
+        state.tables[tableName] = state.tables[tableName].filter((entry) => entry.session_id !== requested_session_id);
+    });
+
+    return {
+        data: { deleted_session_id: requested_session_id },
+        error: null
+    };
 }
 
 function releaseStaleSessionRoleSeats(state, sessionId, timeoutSeconds = 90) {
@@ -340,11 +700,16 @@ function claimSessionRoleSeat(state, {
     requested_client_id,
     requested_timeout_seconds = 90
 }) {
+    const authUserId = getCurrentAuthUserId();
     const normalizedRole = normalizeSeatRole(String(requested_role || '').trim());
     const normalizedName = String(requested_name || '').trim() || null;
     const normalizedClientId = String(requested_client_id || '').trim();
     const roleLimit = getSessionRoleSeatLimit(normalizedRole);
+    const requestedTeam = normalizedRole.match(/^(blue|red|green)_/)?.[1] || null;
 
+    if (!authUserId) {
+        return { data: null, error: { message: 'Browser identity is required.' } };
+    }
     if (!requested_session_id) {
         return { data: null, error: { message: 'Session ID is required.' } };
     }
@@ -357,6 +722,15 @@ function claimSessionRoleSeat(state, {
     if (!roleLimit) {
         return { data: null, error: { message: 'This role cannot be claimed in the live demo.' } };
     }
+    if (/^(blue|red|green)_whitecell(_lead|_support)?$/.test(normalizedRole)) {
+        const grant = getOperatorGrant(state, authUserId, 'whitecell');
+        if (!grant
+            || grant.session_id !== requested_session_id
+            || grant.team_id !== requestedTeam
+            || grant.role !== normalizedRole) {
+            return { data: null, error: { message: 'White Cell seats require operator authorization.' } };
+        }
+    }
 
     const session = state.tables.sessions.find((entry) => entry.id === requested_session_id);
     if (!session || session.status !== 'active') {
@@ -365,9 +739,10 @@ function claimSessionRoleSeat(state, {
 
     releaseStaleSessionRoleSeats(state, requested_session_id, requested_timeout_seconds);
 
-    let participant = state.tables.participants.find((entry) => entry.client_id === normalizedClientId);
+    let participant = state.tables.participants.find((entry) => entry.auth_user_id === authUserId);
     if (!participant) {
         participant = normalizeInsertRow('participants', {
+            auth_user_id: authUserId,
             client_id: normalizedClientId,
             name: normalizedName,
             role: normalizedRole
@@ -376,8 +751,10 @@ function claimSessionRoleSeat(state, {
     } else {
         participant = {
             ...participant,
+            client_id: normalizedClientId || participant.client_id,
             name: normalizedName ?? participant.name ?? null,
             role: normalizedRole,
+            auth_user_id: authUserId,
             updated_at: getTimestamp()
         };
         state.tables.participants = state.tables.participants.map((entry) => (
@@ -456,6 +833,7 @@ function heartbeatSessionRoleSeat(state, {
     requested_client_id,
     requested_timeout_seconds = 90
 }) {
+    const authUserId = getCurrentAuthUserId();
     if (!requested_session_id || !requested_session_participant_id) {
         return {
             data: null,
@@ -472,7 +850,7 @@ function heartbeatSessionRoleSeat(state, {
         ? state.tables.participants.find((entry) => entry.id === seat.participant_id)
         : null;
 
-    if (!seat || !participant || (requested_client_id && participant.client_id !== requested_client_id)) {
+    if (!authUserId || !seat || !participant || participant.auth_user_id !== authUserId) {
         return {
             data: null,
             error: { message: 'Participant seat not found. Please rejoin the session.' }
@@ -523,6 +901,7 @@ function disconnectSessionRoleSeat(state, {
     requested_client_id,
     requested_timeout_seconds = 90
 }) {
+    const authUserId = getCurrentAuthUserId();
     if (!requested_session_id || !requested_session_participant_id) {
         return { data: null, error: null };
     }
@@ -536,7 +915,7 @@ function disconnectSessionRoleSeat(state, {
         ? state.tables.participants.find((entry) => entry.id === seat.participant_id)
         : null;
 
-    if (!seat || !participant || (requested_client_id && participant.client_id !== requested_client_id)) {
+    if (!authUserId || !seat || !participant || participant.auth_user_id !== authUserId) {
         return { data: null, error: null };
     }
 
@@ -574,6 +953,145 @@ function listActiveSessionParticipants(state, {
         data: state.tables.session_participants
             .filter((entry) => entry.session_id === requested_session_id && entry.is_active === true)
             .map((entry) => buildParticipantSeatPayload(state, entry)),
+        error: null
+    };
+}
+
+function operatorUpdateGameState(state, params) {
+    const authUserId = getCurrentAuthUserId();
+    const grant = getOperatorGrant(state, authUserId, 'whitecell');
+    const sessionId = params?.requested_session_id;
+
+    if (!grant || grant.session_id !== sessionId) {
+        return { data: null, error: { message: 'White Cell operator authorization is required.' } };
+    }
+
+    const gameState = state.tables.game_state.find((entry) => entry.session_id === sessionId);
+    if (!gameState) {
+        return { data: null, error: { message: 'Game state not found for this session.' } };
+    }
+
+    const updated = {
+        ...gameState,
+        move: params?.requested_move ?? gameState.move,
+        phase: params?.requested_phase ?? gameState.phase,
+        timer_seconds: params?.requested_timer_seconds ?? gameState.timer_seconds,
+        timer_running: params?.requested_timer_running ?? gameState.timer_running,
+        timer_last_update: params?.requested_timer_last_update ?? gameState.timer_last_update,
+        last_updated: getTimestamp(),
+        updated_at: getTimestamp()
+    };
+
+    state.tables.game_state = state.tables.game_state.map((entry) => (
+        entry.id === updated.id ? updated : entry
+    ));
+
+    return {
+        data: cloneValue(updated),
+        error: null
+    };
+}
+
+function operatorAdjudicateAction(state, params) {
+    const authUserId = getCurrentAuthUserId();
+    const grant = getOperatorGrant(state, authUserId, 'whitecell');
+    const action = state.tables.actions.find((entry) => (
+        entry.id === params?.requested_action_id && entry.is_deleted !== true
+    ));
+
+    if (!action) {
+        return { data: null, error: { message: 'Action not found.' } };
+    }
+
+    if (!grant || grant.session_id !== action.session_id || grant.team_id !== action.team) {
+        return { data: null, error: { message: 'White Cell operator authorization is required.' } };
+    }
+
+    if (action.status !== 'submitted') {
+        return { data: null, error: { message: 'Only submitted actions can be adjudicated.' } };
+    }
+
+    const updated = {
+        ...action,
+        status: 'adjudicated',
+        outcome: params?.requested_outcome ?? null,
+        adjudication_notes: params?.requested_adjudication_notes ?? null,
+        adjudicated_at: params?.requested_adjudicated_at ?? getTimestamp(),
+        updated_at: getTimestamp()
+    };
+
+    state.tables.actions = state.tables.actions.map((entry) => (
+        entry.id === updated.id ? updated : entry
+    ));
+
+    return {
+        data: cloneValue(updated),
+        error: null
+    };
+}
+
+function operatorAnswerRequest(state, params) {
+    const authUserId = getCurrentAuthUserId();
+    const grant = getOperatorGrant(state, authUserId, 'whitecell');
+    const request = state.tables.requests.find((entry) => entry.id === params?.requested_request_id);
+
+    if (!request) {
+        return { data: null, error: { message: 'Request not found.' } };
+    }
+
+    if (!grant || grant.session_id !== request.session_id || grant.team_id !== request.team) {
+        return { data: null, error: { message: 'White Cell operator authorization is required.' } };
+    }
+
+    const respondedAt = params?.requested_responded_at ?? getTimestamp();
+    const updated = {
+        ...request,
+        response: params?.requested_response ?? '',
+        status: request.status === 'withdrawn' ? request.status : 'answered',
+        responded_at: respondedAt,
+        answered_at: respondedAt,
+        updated_at: getTimestamp()
+    };
+
+    state.tables.requests = state.tables.requests.map((entry) => (
+        entry.id === updated.id ? updated : entry
+    ));
+
+    return {
+        data: cloneValue(updated),
+        error: null
+    };
+}
+
+function operatorSendCommunication(state, params) {
+    const authUserId = getCurrentAuthUserId();
+    const grant = getOperatorGrant(state, authUserId, 'whitecell');
+
+    if (!grant || grant.session_id !== params?.requested_session_id) {
+        return { data: null, error: { message: 'White Cell operator authorization is required.' } };
+    }
+
+    const sessionState = state.tables.game_state.find((entry) => entry.session_id === params?.requested_session_id);
+    const communication = normalizeInsertRow('communications', {
+        session_id: params?.requested_session_id,
+        move: sessionState?.move ?? 1,
+        from_role: 'white_cell',
+        to_role: params?.requested_to_role || 'all',
+        type: params?.requested_type,
+        title: params?.requested_title || null,
+        content: params?.requested_content || '',
+        linked_request_id: params?.requested_linked_request_id || null,
+        client_id: authUserId,
+        metadata: {
+            operator_role: grant.role,
+            operator_auth_user_id: authUserId
+        }
+    }, state);
+
+    state.tables.communications.push(communication);
+
+    return {
+        data: cloneValue(communication),
         error: null
     };
 }
@@ -664,6 +1182,7 @@ class MockQueryBuilder {
     async execute() {
         const state = readMockState();
         const tableRows = state.tables[this.tableName];
+        const authUserId = getCurrentAuthUserId();
 
         if (!tableRows) {
             return {
@@ -678,6 +1197,20 @@ class MockQueryBuilder {
         let rows = tableRows;
 
         if (this.operation === 'insert') {
+            const deniedInsert = this.payload.some((entry) => !canInsertTableRow(
+                state,
+                this.tableName,
+                entry,
+                authUserId
+            ));
+
+            if (deniedInsert) {
+                return {
+                    data: null,
+                    error: buildRlsError(this.tableName)
+                };
+            }
+
             const insertedRows = this.payload.map((entry) => normalizeInsertRow(this.tableName, entry, state));
             state.tables[this.tableName] = [...tableRows, ...insertedRows];
             writeMockState(state);
@@ -685,6 +1218,7 @@ class MockQueryBuilder {
         } else if (this.operation === 'update') {
             const timestamp = getTimestamp();
             const updatedRows = [];
+            let updateDenied = false;
 
             state.tables[this.tableName] = tableRows.map((row) => {
                 if (!applyFilters([row], this.filters).length) {
@@ -701,20 +1235,34 @@ class MockQueryBuilder {
                     nextRow.last_updated = this.payload?.last_updated || timestamp;
                 }
 
+                if (!canUpdateTableRow(state, this.tableName, row, nextRow, authUserId)) {
+                    updateDenied = true;
+                    return row;
+                }
+
                 updatedRows.push(nextRow);
                 return nextRow;
             });
 
+            if (updateDenied) {
+                return {
+                    data: null,
+                    error: buildRlsError(this.tableName)
+                };
+            }
+
             writeMockState(state);
             rows = updatedRows;
         } else if (this.operation === 'delete') {
-            const deletedRows = applyFilters(tableRows, this.filters);
-            state.tables[this.tableName] = tableRows.filter((row) => !applyFilters([row], this.filters).length);
-            writeMockState(state);
-            rows = deletedRows;
+            return {
+                data: null,
+                error: buildRlsError(this.tableName)
+            };
         } else {
             rows = applyFilters(tableRows, this.filters);
         }
+
+        rows = rows.filter((row) => canReadTableRow(state, this.tableName, row, authUserId));
 
         rows = sortRows(rows, this.orderBy);
         if (typeof this.limitCount === 'number') {
@@ -851,6 +1399,27 @@ export function createE2EMockSupabaseClient() {
                 };
             }
 
+            if (functionName === 'authorize_demo_operator') {
+                const state = readMockState();
+                const result = authorizeDemoOperator(state, params);
+                writeMockState(state);
+                return result;
+            }
+
+            if (functionName === 'create_live_demo_session') {
+                const state = readMockState();
+                const result = createLiveDemoSession(state, params);
+                writeMockState(state);
+                return result;
+            }
+
+            if (functionName === 'delete_live_demo_session') {
+                const state = readMockState();
+                const result = deleteLiveDemoSession(state, params);
+                writeMockState(state);
+                return result;
+            }
+
             if (functionName === 'claim_session_role_seat') {
                 const state = readMockState();
                 const result = claimSessionRoleSeat(state, params);
@@ -889,6 +1458,34 @@ export function createE2EMockSupabaseClient() {
             if (functionName === 'list_active_session_participants') {
                 const state = readMockState();
                 const result = listActiveSessionParticipants(state, params);
+                writeMockState(state);
+                return result;
+            }
+
+            if (functionName === 'operator_update_game_state') {
+                const state = readMockState();
+                const result = operatorUpdateGameState(state, params);
+                writeMockState(state);
+                return result;
+            }
+
+            if (functionName === 'operator_adjudicate_action') {
+                const state = readMockState();
+                const result = operatorAdjudicateAction(state, params);
+                writeMockState(state);
+                return result;
+            }
+
+            if (functionName === 'operator_answer_request') {
+                const state = readMockState();
+                const result = operatorAnswerRequest(state, params);
+                writeMockState(state);
+                return result;
+            }
+
+            if (functionName === 'operator_send_communication') {
+                const state = readMockState();
+                const result = operatorSendCommunication(state, params);
                 writeMockState(state);
                 return result;
             }

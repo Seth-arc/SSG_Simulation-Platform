@@ -1229,6 +1229,41 @@ COMMENT ON COLUMN notetaker_data.observation_timeline IS 'JSONB array of observa
 COMMENT ON FUNCTION public.lookup_joinable_session_by_code(TEXT) IS 'Authenticated public join RPC. Operator note: do not reintroduce browser-side session inventory listing for code-based joins.';
 
 -- ============================================================================
+-- LIVE DEMO SECURITY OVERLAY
+-- ============================================================================
+-- The base schema above intentionally documents the original bootstrap state.
+-- The authoritative live-demo security model is applied by:
+--   data/2026-04-08_live_demo_rls_hardening.sql
+--
+-- That committed migration replaces the blanket "Allow all operations" policies
+-- with auth.uid-bound RLS, server-issued operator grants, and protected RPCs
+-- for Game Master / White Cell writes. Review that file alongside this schema
+-- when auditing the current Supabase project.
+--   Required deployment setting:
+--     app.settings.live_demo_operator_code_sha256
+--     The hardened operator RPCs do not ship with a fallback access code hash.
+--
+-- Review index for the hardened live-demo model:
+--   Replaced blanket table policies:
+--     sessions, participants, session_participants, game_state, actions,
+--     action_logs, requests, communications, timeline, notetaker_data,
+--     reports, move_completions, game_state_transitions, participant_activity,
+--     data_completeness_checks, action_relationships, rfi_action_links
+--   Protected backend paths:
+--     authorize_demo_operator
+--     create_live_demo_session
+--     delete_live_demo_session
+--     operator_update_game_state
+--     operator_adjudicate_action
+--     operator_answer_request
+--     operator_send_communication
+--     claim_session_role_seat
+--     heartbeat_session_role_seat
+--     disconnect_session_role_seat
+--     release_stale_session_role_seats
+--     list_active_session_participants
+
+-- ============================================================================
 -- VERIFICATION QUERIES
 -- ============================================================================
 -- Run these after deployment to verify all tables were created
@@ -1241,7 +1276,7 @@ AND table_name IN (
     'sessions', 'game_state', 'participants', 'session_participants',
     'actions', 'action_logs', 'requests', 'communications', 
     'timeline', 'notetaker_data', 'reports', 'move_completions',
-    'game_state_transitions', 'participant_activity', 
+    'game_state_transitions', 'participant_activity', 'operator_grants',
     'data_completeness_checks', 'action_relationships', 'rfi_action_links'
 )
 ORDER BY table_name;
@@ -1254,7 +1289,7 @@ AND tablename IN (
     'sessions', 'game_state', 'participants', 'session_participants',
     'actions', 'action_logs', 'requests', 'communications', 
     'timeline', 'notetaker_data', 'reports', 'move_completions',
-    'game_state_transitions', 'participant_activity',
+    'game_state_transitions', 'participant_activity', 'operator_grants',
     'data_completeness_checks', 'action_relationships', 'rfi_action_links'
 )
 ORDER BY tablename;

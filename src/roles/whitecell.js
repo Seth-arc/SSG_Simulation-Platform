@@ -70,7 +70,7 @@ export function getWhiteCellAccessState(teamContext, sessionStoreRef = sessionSt
     const role = sessionStoreRef.getRole?.() || sessionStoreRef.getSessionData?.()?.role || null;
     const parsedRole = parseTeamRole(role);
     const allowedRole = role === teamContext.whitecellLeadRole || role === teamContext.whitecellSupportRole;
-    const allowed = Boolean(
+    const cachedOperatorAccess = Boolean(
         sessionId &&
         allowedRole &&
         sessionStoreRef.hasOperatorAccess?.(OPERATOR_SURFACES.WHITE_CELL, {
@@ -81,7 +81,8 @@ export function getWhiteCellAccessState(teamContext, sessionStoreRef = sessionSt
     );
 
     return {
-        allowed,
+        allowed: Boolean(sessionId && allowedRole),
+        cachedOperatorAccess,
         sessionId,
         role,
         operatorRole: parsedRole.operatorRole || WHITE_CELL_OPERATOR_ROLES.LEAD
@@ -109,6 +110,29 @@ export class WhiteCellController {
         if (!accessState.allowed) {
             showToast({
                 message: `${this.teamContext.whitecellLabel} requires operator authorization from the landing page.`,
+                type: 'error'
+            });
+            navigateToApp('index.html#operatorAccessSection', { replace: true });
+            return;
+        }
+
+        try {
+            const grant = await database.requireOperatorGrant(OPERATOR_SURFACES.WHITE_CELL, {
+                sessionId: accessState.sessionId,
+                teamId: this.teamId,
+                role: accessState.role
+            });
+            sessionStore.setOperatorAuth({
+                ...grant,
+                sessionId: grant?.sessionId || accessState.sessionId,
+                teamId: grant?.teamId || this.teamId,
+                role: grant?.role || accessState.role
+            });
+        } catch (error) {
+            logger.warn('Blocked White Cell access after failed server verification', error);
+            sessionStore.clearOperatorAuth();
+            showToast({
+                message: `${this.teamContext.whitecellLabel} requires a valid server-side operator grant.`,
                 type: 'error'
             });
             navigateToApp('index.html#operatorAccessSection', { replace: true });

@@ -40,8 +40,6 @@ export const CONFIG = {
     SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL || '',
     SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY || '',
     RUNTIME_MODE: 'backend-required',
-    // Temporary client-side live-demo gate. Prompt 5 replaces this with server-backed auth.
-    OPERATOR_ACCESS_CODE: import.meta.env.VITE_OPERATOR_ACCESS_CODE || 'admin2025',
 
     // Role limits per session
     ROLE_LIMITS: {

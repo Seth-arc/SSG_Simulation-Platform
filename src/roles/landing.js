@@ -12,7 +12,6 @@ import { createLogger } from '../utils/logger.js';
 import { showToast } from '../components/ui/Toast.js';
 import { showLoader, hideLoader } from '../components/ui/Loader.js';
 import { validateSessionCode } from '../utils/validation.js';
-import { CONFIG } from '../core/config.js';
 import { navigateToApp } from '../core/navigation.js';
 import {
     OPERATOR_SURFACES,
@@ -354,11 +353,11 @@ export class LandingController {
 
         try {
             if (surface === OPERATOR_SURFACES.GAME_MASTER) {
-                this.authorizeGameMaster();
+                await this.authorizeGameMaster(operatorCode);
                 return;
             }
 
-            await this.authorizeWhiteCell(operatorRole);
+            await this.authorizeWhiteCell(operatorRole, operatorCode);
         } catch (err) {
             logger.error('Failed to authorize operator access:', err);
             showToast({
@@ -371,10 +370,7 @@ export class LandingController {
     }
 
     validateOperatorAccessCode(operatorCode) {
-        return Boolean(
-            operatorCode &&
-            operatorCode === CONFIG.OPERATOR_ACCESS_CODE
-        );
+        return Boolean(operatorCode?.trim());
     }
 
     async findSessionByCode(sessionCode) {
@@ -383,23 +379,24 @@ export class LandingController {
         return database.lookupJoinableSessionByCode(sessionCode);
     }
 
-    authorizeGameMaster() {
+    async authorizeGameMaster(operatorCode) {
         const operatorName = document.getElementById('displayName')?.value?.trim() || 'Game Master Operator';
+        const grant = await database.authorizeOperatorAccess({
+            surface: OPERATOR_SURFACES.GAME_MASTER,
+            accessCode: operatorCode,
+            operatorName
+        });
 
         sessionStore.clear();
         sessionStore.setRole('white');
         sessionStore.setUserName(operatorName);
-        sessionStore.setOperatorAuth({
-            surface: OPERATOR_SURFACES.GAME_MASTER,
-            role: 'white',
-            operatorName
-        });
+        sessionStore.setOperatorAuth(grant);
 
         showToast({ message: 'Operator access granted.', type: 'success' });
         navigateToApp('master.html');
     }
 
-    async authorizeWhiteCell(operatorRole = WHITE_CELL_OPERATOR_ROLES.LEAD) {
+    async authorizeWhiteCell(operatorRole = WHITE_CELL_OPERATOR_ROLES.LEAD, operatorCode) {
         const codeInput = document.getElementById('sessionCode');
         const sessionCode = codeInput?.value?.trim().toUpperCase();
         const operatorName = document.getElementById('displayName')?.value?.trim()
@@ -416,6 +413,14 @@ export class LandingController {
         const session = await this.findSessionByCode(sessionCode);
         const sessionCodeFromLookup = session.session_code || sessionCode;
         const whiteCellRole = buildWhiteCellOperatorRole(this.selectedTeam, operatorRole);
+        const grant = await database.authorizeOperatorAccess({
+            surface: OPERATOR_SURFACES.WHITE_CELL,
+            accessCode: operatorCode,
+            sessionId: session.id,
+            teamId: this.selectedTeam,
+            role: whiteCellRole,
+            operatorName
+        });
         const participant = await database.claimParticipantSeat(session.id, whiteCellRole, operatorName);
 
         sessionStore.clear();
@@ -436,12 +441,12 @@ export class LandingController {
             seatClaimStatus: participant.claim_status || 'claimed'
         });
         sessionStore.setOperatorAuth({
-            surface: OPERATOR_SURFACES.WHITE_CELL,
-            sessionId: session.id,
+            ...grant,
+            sessionId: grant?.sessionId || session.id,
             sessionCode: sessionCodeFromLookup,
-            teamId: this.selectedTeam,
-            role: whiteCellRole,
-            operatorName
+            teamId: grant?.teamId || this.selectedTeam,
+            role: grant?.role || whiteCellRole,
+            operatorName: grant?.operatorName || operatorName
         });
 
         try {

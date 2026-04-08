@@ -75,12 +75,14 @@ function normalizeOperatorAuth(auth) {
 
     return {
         surfaces,
-        operatorName: normalizeString(auth.operatorName),
-        sessionId: normalizeString(auth.sessionId),
-        sessionCode: normalizeString(auth.sessionCode, { uppercase: true }),
-        teamId: normalizeString(auth.teamId),
+        grantId: normalizeString(auth.grantId ?? auth.id),
+        operatorName: normalizeString(auth.operatorName ?? auth.operator_name),
+        sessionId: normalizeString(auth.sessionId ?? auth.session_id),
+        sessionCode: normalizeString(auth.sessionCode ?? auth.session_code, { uppercase: true }),
+        teamId: normalizeString(auth.teamId ?? auth.team_id),
         role: normalizeWhiteCellOperatorRole(normalizeString(auth.role) || ''),
-        grantedAt: normalizeString(auth.grantedAt) || new Date().toISOString()
+        grantedAt: normalizeString(auth.grantedAt ?? auth.granted_at) || new Date().toISOString(),
+        verifiedAt: normalizeString(auth.verifiedAt) || new Date().toISOString()
     };
 }
 

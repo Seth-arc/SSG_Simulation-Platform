@@ -37,8 +37,12 @@ async function loadModules() {
     };
 }
 
-function setClientIdentity(sessionStore, clientId) {
+function setClientIdentity(sessionStore, clientId, { resetAuth = true } = {}) {
     sessionStore.clearAll();
+    if (resetAuth) {
+        vi.setSystemTime(new Date(Date.now() + 1));
+        localStorage.removeItem('esg_e2e_auth_session');
+    }
     localStorage.setItem('esg_client_id', clientId);
     sessionStore.init();
 }
@@ -61,6 +65,11 @@ describe('database live-demo seat contract', () => {
     it('claims a seat successfully through the server-side RPC flow', async () => {
         const { sessionStore, database } = await loadModules();
         setClientIdentity(sessionStore, 'client-seat-a');
+        await database.authorizeOperatorAccess({
+            surface: 'gamemaster',
+            accessCode: 'admin2025',
+            operatorName: 'GM Test'
+        });
 
         const session = await database.createSession({
             name: 'Seat Claim Session',
@@ -92,6 +101,11 @@ describe('database live-demo seat contract', () => {
     it('rejects duplicate claims when the seat is already full', async () => {
         const { sessionStore, database } = await loadModules();
         setClientIdentity(sessionStore, 'client-seat-a');
+        await database.authorizeOperatorAccess({
+            surface: 'gamemaster',
+            accessCode: 'admin2025',
+            operatorName: 'GM Test'
+        });
 
         const session = await database.createSession({
             name: 'Duplicate Claim Session',
@@ -113,6 +127,11 @@ describe('database live-demo seat contract', () => {
     it('releases stale seats automatically before a new claim is evaluated', async () => {
         const { sessionStore, database } = await loadModules();
         setClientIdentity(sessionStore, 'client-stale-a');
+        await database.authorizeOperatorAccess({
+            surface: 'gamemaster',
+            accessCode: 'admin2025',
+            operatorName: 'GM Test'
+        });
 
         const session = await database.createSession({
             name: 'Stale Seat Session',
@@ -144,6 +163,11 @@ describe('database live-demo seat contract', () => {
     it('disconnects a claimed seat and lets the same client rejoin it', async () => {
         const { sessionStore, database } = await loadModules();
         setClientIdentity(sessionStore, 'client-rejoin-a');
+        await database.authorizeOperatorAccess({
+            surface: 'gamemaster',
+            accessCode: 'admin2025',
+            operatorName: 'GM Test'
+        });
 
         const session = await database.createSession({
             name: 'Disconnect Session',

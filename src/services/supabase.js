@@ -233,11 +233,9 @@ if (e2eMockEnabled) {
 export const supabase = rawSupabaseClient || createUnavailableSupabaseClient();
 
 /**
- * Establish a real Supabase identity before any public join or browser write path.
- * GitHub Pages cannot safely hold a privileged server secret, so anonymous auth is the
- * lowest-friction browser bootstrap we can use before calling authenticated RPCs.
+ * Read the current authenticated browser session without mutating it.
  */
-export async function ensureBrowserIdentity({ clientId = null } = {}) {
+export async function getBrowserSession() {
     if (!rawSupabaseClient) {
         throw createConfigurationError();
     }
@@ -251,8 +249,18 @@ export async function ensureBrowserIdentity({ clientId = null } = {}) {
         );
     }
 
-    if (sessionData?.session?.access_token && sessionData.session.user?.id) {
-        return sessionData.session;
+    return sessionData?.session ?? null;
+}
+
+/**
+ * Establish a real Supabase identity before any public join or browser write path.
+ * Anonymous auth is only the browser identity bootstrap; all role and operator
+ * authorization must still be enforced server-side through RLS or RPCs.
+ */
+export async function ensureBrowserIdentity({ clientId = null } = {}) {
+    const existingSession = await getBrowserSession();
+    if (existingSession?.access_token && existingSession.user?.id) {
+        return existingSession;
     }
 
     const metadata = clientId ? { client_id: clientId } : {};
