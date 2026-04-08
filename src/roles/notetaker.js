@@ -45,6 +45,15 @@ export const DEFAULT_ALLIANCE_DATA = {
     externalPressures: ''
 };
 
+export const NOTETAKER_TIMELINE_EVENT_SOURCE = 'notetaker_save';
+
+const CAPTURE_EVENT_TYPES = ['NOTE', 'MOMENT', 'QUOTE'];
+
+const NOTETAKER_SAVE_TIMELINE_CONTENT = {
+    dynamics: 'Team dynamics notes saved',
+    alliance: 'Alliance tracking notes saved'
+};
+
 export function getNotetakerRecordForMove(records = [], move = 1) {
     return (records || []).find((record) => record.move === move) || null;
 }
@@ -96,6 +105,50 @@ export function createObservationTimelineEntry({
         ...(participantLabel ? { participant_label: participantLabel } : {}),
         ...(clientId ? { client_id: clientId } : {}),
         ...(factionTag ? { faction_tag: factionTag } : {})
+    };
+}
+
+export function isObservationCaptureEvent(event = {}) {
+    const eventType = event?.type ?? event?.event_type ?? null;
+    return CAPTURE_EVENT_TYPES.includes(eventType) &&
+        event?.metadata?.source !== NOTETAKER_TIMELINE_EVENT_SOURCE;
+}
+
+export function buildNotetakerSaveTimelineEvent(noteScope, {
+    sessionId = null,
+    teamId = null,
+    teamLabel = null,
+    participantKey = null,
+    participantId = null,
+    participantLabel = null,
+    clientId = null,
+    move = 1,
+    phase = 1
+} = {}) {
+    const content = NOTETAKER_SAVE_TIMELINE_CONTENT[noteScope];
+    if (!content) {
+        throw new Error(`Unsupported notetaker timeline scope: ${noteScope}`);
+    }
+
+    const actor = participantLabel ||
+        (teamLabel ? `${teamLabel} Notetaker` : (teamId ? `${teamId} notetaker` : 'Notetaker'));
+
+    return {
+        session_id: sessionId,
+        type: 'NOTE',
+        content,
+        team: teamId,
+        client_id: clientId,
+        move,
+        phase,
+        metadata: {
+            actor,
+            source: NOTETAKER_TIMELINE_EVENT_SOURCE,
+            note_scope: noteScope,
+            ...(participantKey ? { participant_key: participantKey } : {}),
+            ...(participantId ? { participant_id: participantId } : {}),
+            ...(participantLabel ? { participant_label: participantLabel } : {})
+        }
     };
 }
 
@@ -351,7 +404,7 @@ export class NotetakerController {
             .filter((event) => [this.teamId, 'white_cell'].includes(event.team));
 
         this.captures = relevantEvents
-            .filter((event) => ['NOTE', 'MOMENT', 'QUOTE'].includes(event.type || event.event_type))
+            .filter((event) => isObservationCaptureEvent(event))
             .slice(0, 20);
 
         this.renderCaptures();
@@ -577,7 +630,8 @@ export class NotetakerController {
         this.setAutoSaveStatus('dynamics', 'saving');
         await this.saveDynamicsData({
             showSuccessToast: true,
-            showErrorToast: true
+            showErrorToast: true,
+            emitTimelineEvent: true
         });
     }
 
@@ -586,19 +640,29 @@ export class NotetakerController {
      */
     async saveDynamicsData({
         showSuccessToast = false,
-        showErrorToast = false
+        showErrorToast = false,
+        emitTimelineEvent = false
     } = {}) {
         const sessionId = sessionStore.getSessionId();
         if (!sessionId) return;
 
         try {
+            const payloadBase = this.buildNotetakerPayloadBase();
             await database.saveNotetakerData({
-                ...this.buildNotetakerPayloadBase(),
+                ...payloadBase,
                 dynamics_analysis: this.dynamicsData
             });
+            const timelineUpdated = emitTimelineEvent
+                ? await this.createSharedNotesTimelineEvent('dynamics', payloadBase)
+                : true;
             this.setAutoSaveStatus('dynamics', 'saved');
             if (showSuccessToast) {
-                showToast('Team dynamics saved', { type: 'success' });
+                showToast(
+                    timelineUpdated
+                        ? 'Team dynamics saved'
+                        : 'Team dynamics saved, but the shared timeline did not update.',
+                    { type: timelineUpdated ? 'success' : 'warning' }
+                );
             }
             logger.debug('Dynamics data saved');
         } catch (err) {
@@ -645,7 +709,8 @@ export class NotetakerController {
         this.setAutoSaveStatus('alliance', 'saving');
         await this.saveAllianceData({
             showSuccessToast: true,
-            showErrorToast: true
+            showErrorToast: true,
+            emitTimelineEvent: true
         });
     }
 
@@ -654,19 +719,29 @@ export class NotetakerController {
      */
     async saveAllianceData({
         showSuccessToast = false,
-        showErrorToast = false
+        showErrorToast = false,
+        emitTimelineEvent = false
     } = {}) {
         const sessionId = sessionStore.getSessionId();
         if (!sessionId) return;
 
         try {
+            const payloadBase = this.buildNotetakerPayloadBase();
             await database.saveNotetakerData({
-                ...this.buildNotetakerPayloadBase(),
+                ...payloadBase,
                 external_factors: this.allianceData
             });
+            const timelineUpdated = emitTimelineEvent
+                ? await this.createSharedNotesTimelineEvent('alliance', payloadBase)
+                : true;
             this.setAutoSaveStatus('alliance', 'saved');
             if (showSuccessToast) {
-                showToast('Alliance tracking saved', { type: 'success' });
+                showToast(
+                    timelineUpdated
+                        ? 'Alliance tracking saved'
+                        : 'Alliance tracking saved, but the shared timeline did not update.',
+                    { type: timelineUpdated ? 'success' : 'warning' }
+                );
             }
             logger.debug('Alliance data saved');
         } catch (err) {
@@ -735,6 +810,30 @@ export class NotetakerController {
             participant_id: this.participantContext.participantId,
             participant_label: this.participantContext.participantLabel
         };
+    }
+
+    async createSharedNotesTimelineEvent(noteScope, payloadBase = this.buildNotetakerPayloadBase()) {
+        try {
+            const createdEvent = await database.createTimelineEvent(
+                buildNotetakerSaveTimelineEvent(noteScope, {
+                    sessionId: payloadBase.session_id,
+                    teamId: payloadBase.team,
+                    teamLabel: this.teamLabel,
+                    participantKey: payloadBase.participant_key,
+                    participantId: payloadBase.participant_id,
+                    participantLabel: payloadBase.participant_label,
+                    clientId: payloadBase.client_id,
+                    move: payloadBase.move,
+                    phase: payloadBase.phase
+                })
+            );
+
+            timelineStore.updateFromServer('INSERT', createdEvent);
+            return true;
+        } catch (err) {
+            logger.error(`Failed to create ${noteScope} timeline event:`, err);
+            return false;
+        }
     }
 
     /**

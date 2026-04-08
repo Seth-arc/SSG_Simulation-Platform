@@ -4,9 +4,12 @@ import { mergeNotetakerRecord } from '../services/database.js';
 import {
     DEFAULT_ALLIANCE_DATA,
     DEFAULT_DYNAMICS_DATA,
+    NOTETAKER_TIMELINE_EVENT_SOURCE,
     buildNotetakerViewState,
+    buildNotetakerSaveTimelineEvent,
     createObservationTimelineEntry,
-    getNotetakerRecordForMove
+    getNotetakerRecordForMove,
+    isObservationCaptureEvent
 } from './notetaker.js';
 
 describe('Notetaker move-scoped view state', () => {
@@ -169,5 +172,58 @@ describe('Notetaker move-scoped view state', () => {
             consensusLevel: '8'
         });
         expect(secondSeatState.allianceData).toEqual(DEFAULT_ALLIANCE_DATA);
+    });
+
+    it('builds shared timeline updates for manual note saves without exposing the private note body', () => {
+        const timelineEvent = buildNotetakerSaveTimelineEvent('dynamics', {
+            sessionId: 'session-88',
+            teamId: 'blue',
+            teamLabel: 'Blue Team',
+            participantKey: 'seat-blue-1',
+            participantId: 'participant-blue-1',
+            participantLabel: 'Morgan',
+            clientId: 'client-blue-1',
+            move: 2,
+            phase: 3
+        });
+
+        expect(timelineEvent).toEqual({
+            session_id: 'session-88',
+            type: 'NOTE',
+            content: 'Team dynamics notes saved',
+            team: 'blue',
+            client_id: 'client-blue-1',
+            move: 2,
+            phase: 3,
+            metadata: {
+                actor: 'Morgan',
+                source: NOTETAKER_TIMELINE_EVENT_SOURCE,
+                note_scope: 'dynamics',
+                participant_key: 'seat-blue-1',
+                participant_id: 'participant-blue-1',
+                participant_label: 'Morgan'
+            }
+        });
+    });
+
+    it('keeps shared save events out of the recent captures stream', () => {
+        const saveEvent = buildNotetakerSaveTimelineEvent('alliance', {
+            sessionId: 'session-88',
+            teamId: 'blue',
+            teamLabel: 'Blue Team',
+            move: 1,
+            phase: 1
+        });
+
+        expect(isObservationCaptureEvent({
+            type: 'NOTE',
+            content: 'Team quoted the minister directly.',
+            metadata: { actor: 'Morgan' }
+        })).toBe(true);
+        expect(isObservationCaptureEvent(saveEvent)).toBe(false);
+        expect(isObservationCaptureEvent({
+            type: 'MOMENT',
+            content: 'Turning point reached'
+        })).toBe(true);
     });
 });
