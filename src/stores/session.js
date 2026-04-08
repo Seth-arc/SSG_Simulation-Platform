@@ -11,6 +11,14 @@ import {
 } from '../core/teamContext.js';
 
 const logger = createLogger('SessionStore');
+const STORAGE_KEYS = Object.freeze({
+    SESSION_ID: 'esg_session_id',
+    CLIENT_ID: 'esg_client_id',
+    ROLE: 'esg_role',
+    USER_NAME: 'esg_user_name',
+    SESSION_DATA: 'esg_session_data',
+    OPERATOR_AUTH: 'esg_operator_auth'
+});
 
 let currentSessionId = null;
 let currentClientId = null;
@@ -23,8 +31,41 @@ let storageListenerBound = false;
 
 const listeners = new Set();
 
+function readStorageHandle(candidate) {
+    try {
+        const storage = candidate?.();
+        return storage && typeof storage.getItem === 'function'
+            ? storage
+            : null;
+    } catch (_error) {
+        return null;
+    }
+}
+
+function getScopedStorage() {
+    return (
+        readStorageHandle(() => window.sessionStorage)
+        || readStorageHandle(() => globalThis.sessionStorage)
+        || readStorageHandle(() => globalThis.localStorage)
+        || readStorageHandle(() => window.localStorage)
+        || null
+    );
+}
+
+function getStoredValue(key) {
+    return getScopedStorage()?.getItem(key) ?? null;
+}
+
+function setStoredValue(key, value) {
+    getScopedStorage()?.setItem(key, value);
+}
+
+function removeStoredValue(key) {
+    getScopedStorage()?.removeItem(key);
+}
+
 function readSessionDataFromStorage() {
-    const cachedData = localStorage.getItem('esg_session_data');
+    const cachedData = getStoredValue(STORAGE_KEYS.SESSION_DATA);
     if (!cachedData) {
         return null;
     }
@@ -39,11 +80,11 @@ function readSessionDataFromStorage() {
 
 function persistSessionData() {
     if (currentSessionData) {
-        localStorage.setItem('esg_session_data', JSON.stringify(currentSessionData));
+        setStoredValue(STORAGE_KEYS.SESSION_DATA, JSON.stringify(currentSessionData));
         return;
     }
 
-    localStorage.removeItem('esg_session_data');
+    removeStoredValue(STORAGE_KEYS.SESSION_DATA);
 }
 
 function normalizeOperatorAuth(auth) {
@@ -87,7 +128,7 @@ function normalizeOperatorAuth(auth) {
 }
 
 function readOperatorAuthFromStorage() {
-    const cachedData = localStorage.getItem('esg_operator_auth');
+    const cachedData = getStoredValue(STORAGE_KEYS.OPERATOR_AUTH);
     if (!cachedData) {
         return null;
     }
@@ -102,11 +143,11 @@ function readOperatorAuthFromStorage() {
 
 function persistOperatorAuth() {
     if (currentOperatorAuth) {
-        localStorage.setItem('esg_operator_auth', JSON.stringify(currentOperatorAuth));
+        setStoredValue(STORAGE_KEYS.OPERATOR_AUTH, JSON.stringify(currentOperatorAuth));
         return;
     }
 
-    localStorage.removeItem('esg_operator_auth');
+    removeStoredValue(STORAGE_KEYS.OPERATOR_AUTH);
 }
 
 function buildDefaultGameState() {
@@ -167,7 +208,7 @@ function normalizeSessionData(data, sessionId = currentSessionId) {
 }
 
 function syncSessionIdFromStorage() {
-    const storedId = localStorage.getItem('esg_session_id');
+    const storedId = getStoredValue(STORAGE_KEYS.SESSION_ID);
     if (storedId !== currentSessionId) {
         currentSessionId = storedId;
     }
@@ -251,30 +292,34 @@ function notifyListeners() {
 }
 
 function bindStorageListener() {
-    if (storageListenerBound || typeof window === 'undefined') {
+    if (
+        storageListenerBound
+        || typeof window === 'undefined'
+        || getScopedStorage() !== readStorageHandle(() => window.localStorage)
+    ) {
         return;
     }
 
     window.addEventListener('storage', (event) => {
-        if (event.key === 'esg_session_id' && event.newValue !== currentSessionId) {
+        if (event.key === STORAGE_KEYS.SESSION_ID && event.newValue !== currentSessionId) {
             logger.info('Session ID changed in another tab');
             currentSessionId = event.newValue;
         }
 
-        if (event.key === 'esg_role' && event.newValue !== currentRole) {
+        if (event.key === STORAGE_KEYS.ROLE && event.newValue !== currentRole) {
             logger.info('Role changed in another tab');
             currentRole = event.newValue;
         }
 
-        if (event.key === 'esg_user_name' && event.newValue !== currentUserName) {
+        if (event.key === STORAGE_KEYS.USER_NAME && event.newValue !== currentUserName) {
             currentUserName = event.newValue;
         }
 
-        if (event.key === 'esg_session_data') {
+        if (event.key === STORAGE_KEYS.SESSION_DATA) {
             currentSessionData = readSessionDataFromStorage();
         }
 
-        if (event.key === 'esg_operator_auth') {
+        if (event.key === STORAGE_KEYS.OPERATOR_AUTH) {
             currentOperatorAuth = readOperatorAuthFromStorage();
         }
 
@@ -286,10 +331,10 @@ function bindStorageListener() {
 
 export const sessionStore = {
     init() {
-        currentSessionId = localStorage.getItem('esg_session_id');
-        currentClientId = localStorage.getItem('esg_client_id') || this.generateClientId();
-        currentRole = normalizeSessionRole(localStorage.getItem('esg_role'));
-        currentUserName = localStorage.getItem('esg_user_name');
+        currentSessionId = getStoredValue(STORAGE_KEYS.SESSION_ID);
+        currentClientId = getStoredValue(STORAGE_KEYS.CLIENT_ID) || this.generateClientId();
+        currentRole = normalizeSessionRole(getStoredValue(STORAGE_KEYS.ROLE));
+        currentUserName = getStoredValue(STORAGE_KEYS.USER_NAME);
         currentSessionData = normalizeSessionData(readSessionDataFromStorage(), currentSessionId);
         currentOperatorAuth = readOperatorAuthFromStorage();
 
@@ -322,7 +367,7 @@ export const sessionStore = {
 
         const hasChanged = currentSessionId !== sessionId;
         currentSessionId = sessionId;
-        localStorage.setItem('esg_session_id', sessionId);
+        setStoredValue(STORAGE_KEYS.SESSION_ID, sessionId);
 
         if (hasChanged && currentSessionData?.id !== sessionId) {
             currentSessionData = buildDefaultSessionData(sessionId);
@@ -346,7 +391,7 @@ export const sessionStore = {
 
     setRole(role) {
         currentRole = normalizeSessionRole(role);
-        localStorage.setItem('esg_role', currentRole);
+        setStoredValue(STORAGE_KEYS.ROLE, currentRole);
 
         if (currentSessionData) {
             currentSessionData = {
@@ -366,7 +411,7 @@ export const sessionStore = {
 
     setUserName(name) {
         currentUserName = name;
-        localStorage.setItem('esg_user_name', name);
+        setStoredValue(STORAGE_KEYS.USER_NAME, name);
 
         if (currentSessionData) {
             currentSessionData = {
@@ -381,7 +426,7 @@ export const sessionStore = {
 
     generateClientId() {
         const id = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-        localStorage.setItem('esg_client_id', id);
+        setStoredValue(STORAGE_KEYS.CLIENT_ID, id);
         logger.debug('Generated client ID:', `${id.substring(0, 12)}...`);
         return id;
     },
@@ -541,11 +586,11 @@ export const sessionStore = {
         currentSessionData = null;
         currentOperatorAuth = null;
 
-        localStorage.removeItem('esg_session_id');
-        localStorage.removeItem('esg_role');
-        localStorage.removeItem('esg_user_name');
-        localStorage.removeItem('esg_session_data');
-        localStorage.removeItem('esg_operator_auth');
+        removeStoredValue(STORAGE_KEYS.SESSION_ID);
+        removeStoredValue(STORAGE_KEYS.ROLE);
+        removeStoredValue(STORAGE_KEYS.USER_NAME);
+        removeStoredValue(STORAGE_KEYS.SESSION_DATA);
+        removeStoredValue(STORAGE_KEYS.OPERATOR_AUTH);
 
         notifyListeners();
     },
@@ -553,7 +598,7 @@ export const sessionStore = {
     clearAll() {
         this.clear();
         currentClientId = null;
-        localStorage.removeItem('esg_client_id');
+        removeStoredValue(STORAGE_KEYS.CLIENT_ID);
         notifyListeners();
     },
 

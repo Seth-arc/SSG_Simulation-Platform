@@ -57,13 +57,17 @@ async function loadSessionStore() {
 describe('sessionStore snapshot model', () => {
     beforeEach(() => {
         global.localStorage = new MemoryStorage();
+        global.sessionStorage = new MemoryStorage();
         global.window = createWindow();
+        global.window.localStorage = global.localStorage;
+        global.window.sessionStorage = global.sessionStorage;
     });
 
     afterEach(() => {
         vi.resetModules();
         delete global.window;
         delete global.localStorage;
+        delete global.sessionStorage;
     });
 
     it('publishes state snapshots to subscribers', async () => {
@@ -207,6 +211,28 @@ describe('sessionStore snapshot model', () => {
                 }
             }
         });
+    });
+
+    it('prefers window-scoped sessionStorage over shared localStorage when both exist', async () => {
+        localStorage.setItem('esg_session_id', 'shared-session');
+        localStorage.setItem('esg_role', 'viewer');
+        localStorage.setItem('esg_user_name', 'Shared Observer');
+        localStorage.setItem('esg_client_id', 'shared-client-id');
+        localStorage.setItem('esg_session_data', JSON.stringify({
+            id: 'shared-session',
+            role: 'viewer',
+            displayName: 'Shared Observer'
+        }));
+
+        const { sessionStore } = await loadSessionStore();
+        const snapshot = sessionStore.getSnapshot();
+
+        expect(snapshot.sessionId).toBe(null);
+        expect(snapshot.role).toBe(null);
+        expect(snapshot.userName).toBe(null);
+        expect(snapshot.clientId).not.toBe('shared-client-id');
+        expect(sessionStorage.getItem('esg_client_id')).toBe(snapshot.clientId);
+        expect(localStorage.getItem('esg_client_id')).toBe('shared-client-id');
     });
 
     it('persists scoped operator auth separately from public participant session data', async () => {

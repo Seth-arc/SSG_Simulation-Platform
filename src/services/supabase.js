@@ -23,6 +23,45 @@ let validation = validateConfig();
 let initializationError = null;
 const e2eMockEnabled = isE2EMockEnabled();
 
+function readStorageHandle(candidate) {
+    try {
+        const storage = candidate?.();
+        return storage && typeof storage.getItem === 'function'
+            ? storage
+            : null;
+    } catch (_error) {
+        return null;
+    }
+}
+
+function resolveSupabaseAuthStorage() {
+    return (
+        readStorageHandle(() => window.sessionStorage)
+        || readStorageHandle(() => globalThis.sessionStorage)
+        || readStorageHandle(() => globalThis.localStorage)
+        || readStorageHandle(() => window.localStorage)
+        || null
+    );
+}
+
+export function getSupabaseAuthStorageBackend() {
+    const storage = resolveSupabaseAuthStorage();
+    const sessionStorageRef = readStorageHandle(() => window.sessionStorage)
+        || readStorageHandle(() => globalThis.sessionStorage);
+    const localStorageRef = readStorageHandle(() => globalThis.localStorage)
+        || readStorageHandle(() => window.localStorage);
+
+    if (storage && sessionStorageRef && storage === sessionStorageRef) {
+        return 'sessionStorage';
+    }
+
+    if (storage && localStorageRef && storage === localStorageRef) {
+        return 'localStorage';
+    }
+
+    return 'memory';
+}
+
 function buildRuntimeStatus() {
     if (e2eMockEnabled) {
         return {
@@ -199,6 +238,7 @@ if (e2eMockEnabled) {
     logger.info('Supabase E2E mock backend enabled');
 } else if (validation.valid && isValidSupabaseUrl(CONFIG.SUPABASE_URL)) {
     try {
+        const authStorage = resolveSupabaseAuthStorage();
         rawSupabaseClient = createClient(
             CONFIG.SUPABASE_URL,
             CONFIG.SUPABASE_ANON_KEY,
@@ -207,7 +247,8 @@ if (e2eMockEnabled) {
                     persistSession: true,
                     autoRefreshToken: true,
                     detectSessionInUrl: false,
-                    storageKey: SUPABASE_AUTH_STORAGE_KEY
+                    storageKey: SUPABASE_AUTH_STORAGE_KEY,
+                    ...(authStorage ? { storage: authStorage } : {})
                 },
                 realtime: {
                     params: {
