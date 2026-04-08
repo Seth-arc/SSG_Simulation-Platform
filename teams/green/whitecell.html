@@ -218,6 +218,18 @@
                                 <button class="btn btn-secondary w-full" id="resetTimerBtn">Reset to 90:00</button>
                             </div>
                         </div>
+
+                        <div class="card card-bordered" style="padding: var(--space-4); margin-top: var(--space-4);">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-3);">
+                                <div>
+                                    <h3 class="text-base font-semibold">Live Participants</h3>
+                                    <p class="text-sm text-gray-500" id="participantsSummary">Loading participant roster...</p>
+                                </div>
+                            </div>
+                            <div id="participantsList" class="card-list" aria-live="polite">
+                                <!-- Connected participants will be populated here -->
+                            </div>
+                        </div>
                     </div>
                 </section>
 

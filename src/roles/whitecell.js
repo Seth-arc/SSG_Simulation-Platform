@@ -8,6 +8,7 @@ import { gameStateStore } from '../stores/gameState.js';
 import { actionsStore } from '../stores/actions.js';
 import { requestsStore } from '../stores/requests.js';
 import { timelineStore } from '../stores/timeline.js';
+import { participantsStore } from '../stores/participants.js';
 import { communicationsStore } from '../stores/communications.js';
 import { database } from '../services/database.js';
 import { syncService } from '../services/sync.js';
@@ -15,7 +16,7 @@ import { createLogger } from '../utils/logger.js';
 import { showToast } from '../components/ui/Toast.js';
 import { showLoader, hideLoader } from '../components/ui/Loader.js';
 import { showModal, confirmModal } from '../components/ui/Modal.js';
-import { createBadge, createStatusBadge, createPriorityBadge } from '../components/ui/Badge.js';
+import { createBadge, createRoleBadge, createStatusBadge, createPriorityBadge } from '../components/ui/Badge.js';
 import { formatDateTime, formatRelativeTime } from '../utils/formatting.js';
 import { CONFIG } from '../core/config.js';
 import { ENUMS, canAdjudicateAction } from '../core/enums.js';
@@ -23,6 +24,7 @@ import { navigateToApp } from '../core/navigation.js';
 import {
     OPERATOR_SURFACES,
     WHITE_CELL_OPERATOR_ROLES,
+    getRoleDisplayName,
     parseTeamRole,
     resolveTeamContext
 } from '../core/teamContext.js';
@@ -48,6 +50,8 @@ export const WHITE_CELL_DOM_IDS = [
     'timerStatusLabel',
     'timerStatus',
     'actionsBadge',
+    'participantsSummary',
+    'participantsList',
     'actionsList',
     'adjudicationQueue',
     'rfiBadge',
@@ -95,11 +99,78 @@ export function getWhiteCellAccessState(teamContext, sessionStoreRef = sessionSt
     };
 }
 
+function getParticipantTimestamp(participant = {}) {
+    return new Date(
+        participant.heartbeat_at
+        || participant.last_seen
+        || participant.joined_at
+        || 0
+    ).getTime();
+}
+
+export function isConnectedParticipant(participant = {}) {
+    if (typeof participant?.is_active === 'boolean') {
+        return participant.is_active;
+    }
+
+    return true;
+}
+
+export function isWhiteCellVisibleParticipant(participant = {}, teamId = null) {
+    if (!participant || typeof participant !== 'object') {
+        return false;
+    }
+
+    if (!teamId) {
+        return true;
+    }
+
+    if (participant.team === teamId || participant.team_id === teamId) {
+        return true;
+    }
+
+    if (participant.role === 'viewer') {
+        return true;
+    }
+
+    const parsedRole = parseTeamRole(participant.role);
+    return parsedRole.teamId === teamId;
+}
+
+export function buildWhiteCellParticipantRoster(participants = [], teamId = null) {
+    return [...participants]
+        .filter((participant) => isWhiteCellVisibleParticipant(participant, teamId))
+        .sort((left, right) => {
+            const activeDelta = Number(isConnectedParticipant(right)) - Number(isConnectedParticipant(left));
+            if (activeDelta !== 0) {
+                return activeDelta;
+            }
+
+            return getParticipantTimestamp(right) - getParticipantTimestamp(left);
+        });
+}
+
+export function formatWhiteCellParticipantSummary(participants = []) {
+    const total = participants.length;
+    const connected = participants.filter((participant) => isConnectedParticipant(participant)).length;
+
+    if (total === 0) {
+        return 'No participants have joined this team yet.';
+    }
+
+    if (connected === total) {
+        return `${connected} connected participant${connected === 1 ? '' : 's'}`;
+    }
+
+    return `${connected} connected / ${total} total participants`;
+}
+
 export class WhiteCellController {
     constructor() {
         this.actions = [];
         this.rfis = [];
         this.communications = [];
+        this.participants = [];
         this.storeUnsubscribers = [];
         this.currentTimerSeconds = CONFIG.DEFAULT_TIMER_SECONDS;
         this.timerRunning = false;
@@ -159,6 +230,7 @@ export class WhiteCellController {
         this.syncRfisFromStore();
         this.syncCommunicationsFromStore();
         this.syncTimelineFromStore();
+        this.syncParticipantsFromStore();
         this.updateTimerDisplay();
         this.updateTimerStatusDisplay();
 
@@ -242,6 +314,12 @@ export class WhiteCellController {
         this.storeUnsubscribers.push(
             communicationsStore.subscribe(() => {
                 this.syncCommunicationsFromStore();
+            })
+        );
+
+        this.storeUnsubscribers.push(
+            participantsStore.subscribe(() => {
+                this.syncParticipantsFromStore();
             })
         );
 
@@ -1006,6 +1084,54 @@ export class WhiteCellController {
         ]);
         this.communications = communicationsStore.getByRecipients(allowedRecipients);
         this.renderCommunicationHistory();
+    }
+
+    syncParticipantsFromStore() {
+        this.participants = buildWhiteCellParticipantRoster(participantsStore.getAll(), this.teamId);
+        this.renderParticipants();
+    }
+
+    renderParticipants() {
+        const summary = document.getElementById('participantsSummary');
+        const container = document.getElementById('participantsList');
+        if (!summary || !container) return;
+
+        summary.textContent = formatWhiteCellParticipantSummary(this.participants);
+
+        if (this.participants.length === 0) {
+            container.innerHTML = '<p class="text-sm text-gray-500">No facilitator, notetaker, observer, or White Cell seats are connected for this team yet.</p>';
+            return;
+        }
+
+        container.innerHTML = this.participants.map((participant) => {
+            const connectionBadge = createBadge({
+                text: isConnectedParticipant(participant) ? 'Connected' : 'Inactive',
+                variant: isConnectedParticipant(participant) ? 'success' : 'default',
+                size: 'sm',
+                rounded: true
+            }).outerHTML;
+            const roleBadge = createRoleBadge(participant.role || 'unknown').outerHTML;
+            const roleLabel = getRoleDisplayName(participant.role, { observerTeamId: this.teamId }) || participant.role || 'Unknown role';
+            const lastActiveAt = participant.heartbeat_at || participant.last_seen || participant.joined_at;
+
+            return `
+                <div class="card card-bordered" style="padding: var(--space-3); margin-bottom: var(--space-3);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-2); margin-bottom: var(--space-2);">
+                        <div>
+                            <p class="text-sm font-semibold">${this.escapeHtml(participant.display_name || 'Unknown')}</p>
+                            <p class="text-xs text-gray-500">${this.escapeHtml(roleLabel)}</p>
+                        </div>
+                        <div style="display: flex; gap: var(--space-2); flex-wrap: wrap; justify-content: flex-end;">
+                            ${connectionBadge}
+                            ${roleBadge}
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500">
+                        ${lastActiveAt ? `Last active ${formatRelativeTime(lastActiveAt)}` : 'Joined this session recently'}
+                    </p>
+                </div>
+            `;
+        }).join('');
     }
 
     renderCommunicationHistory() {

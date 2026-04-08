@@ -142,4 +142,52 @@ describe('White Cell DOM contract', () => {
             role: 'blue_whitecell_support'
         });
     });
+
+    it('keeps the visible participant roster scoped to the current team roles', async () => {
+        const { buildWhiteCellParticipantRoster } = await loadWhiteCellModule();
+
+        const roster = buildWhiteCellParticipantRoster([
+            {
+                id: 'blue-facilitator',
+                role: 'blue_facilitator',
+                display_name: 'Alex',
+                is_active: true,
+                heartbeat_at: '2026-04-08T10:05:00.000Z'
+            },
+            {
+                id: 'red-facilitator',
+                role: 'red_facilitator',
+                display_name: 'Priya',
+                is_active: true,
+                heartbeat_at: '2026-04-08T10:06:00.000Z'
+            },
+            {
+                id: 'blue-whitecell',
+                role: 'blue_whitecell_support',
+                display_name: 'Morgan',
+                is_active: true,
+                heartbeat_at: '2026-04-08T10:04:00.000Z'
+            },
+            {
+                id: 'observer-1',
+                role: 'viewer',
+                display_name: 'Observer One',
+                is_active: false,
+                heartbeat_at: '2026-04-08T09:55:00.000Z'
+            },
+            {
+                id: 'gamemaster',
+                role: 'white',
+                display_name: 'Game Master',
+                is_active: true,
+                heartbeat_at: '2026-04-08T10:07:00.000Z'
+            }
+        ], 'blue');
+
+        expect(roster.map((participant) => participant.id)).toEqual([
+            'blue-facilitator',
+            'blue-whitecell',
+            'observer-1'
+        ]);
+    });
 });
