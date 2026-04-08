@@ -73,12 +73,12 @@ export class LandingController {
         }
 
         // Role selection buttons
-        const teamButtons = document.querySelectorAll('.team-option');
+        const teamButtons = document.querySelectorAll('.chip[data-team]');
         teamButtons.forEach((button) => {
             button.addEventListener('click', () => this.selectTeam(button));
         });
 
-        const roleButtons = document.querySelectorAll('.role-option');
+        const roleButtons = document.querySelectorAll('.chip[data-role-surface]');
         roleButtons.forEach((button) => {
             button.addEventListener('click', () => this.selectRole(button));
         });
@@ -117,14 +117,14 @@ export class LandingController {
     }
 
     selectDefaultTeam() {
-        const defaultTeamButton = document.querySelector(`.team-option[data-team="${this.selectedTeam}"]`);
+        const defaultTeamButton = document.querySelector(`.chip[data-team="${this.selectedTeam}"]`);
         if (defaultTeamButton) {
             this.selectTeam(defaultTeamButton);
         }
     }
 
     selectTeam(button) {
-        document.querySelectorAll('.team-option').forEach((candidate) => {
+        document.querySelectorAll('.chip[data-team]').forEach((candidate) => {
             candidate.classList.remove('selected');
             candidate.setAttribute('aria-pressed', 'false');
         });
@@ -196,7 +196,7 @@ export class LandingController {
         }
 
         // Deselect all
-        document.querySelectorAll('.role-option').forEach(btn => {
+        document.querySelectorAll('.chip[data-role-surface]').forEach(btn => {
             btn.classList.remove('selected');
             btn.setAttribute('aria-pressed', 'false');
         });
