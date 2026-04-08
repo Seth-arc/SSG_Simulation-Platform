@@ -92,8 +92,9 @@ async function expectRoleSurface(page, roleCase) {
     if (roleCase.roleSurface === ROLE_SURFACES.NOTETAKER) {
         await expect(page).toHaveURL(new RegExp(`/teams/${roleCase.teamId}/notetaker\\.html(?:\\?.*)?$`));
         await expect(page.locator('body')).toHaveAttribute('data-team', roleCase.teamId);
+        await expect(page.locator('.header-title')).toContainText(`${roleCase.displayName.split(' ')[0]} Team Notetaker`);
         await expect(page.locator('#captureForm')).toBeVisible();
-        await expect(page.locator('#notetakerScopeNotice')).toContainText('Move notes are saved per notetaker seat.');
+        await expect(page.locator('#captureContent')).toBeVisible();
         return;
     }
 

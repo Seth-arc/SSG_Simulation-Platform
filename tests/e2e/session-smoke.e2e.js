@@ -40,7 +40,7 @@ test('@smoke session creation, role join, action submit, and White Cell adjudica
         await page.locator('#displayName').fill('Blue Lead');
         await page.locator('.chip[data-team="blue"]').click();
         await page.locator('.chip[data-role-surface="facilitator"]').click();
-        await page.getByRole('button', { name: 'Establish Connection' }).click();
+        await page.getByRole('button', { name: 'Join Session' }).click();
 
         await page.waitForURL(/facilitator\.html/);
         await page.locator('#newActionBtn').click();

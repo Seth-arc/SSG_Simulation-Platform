@@ -185,7 +185,7 @@ export async function joinPublicParticipant(page, {
     await page.locator('#displayName').fill(displayName);
     await page.locator(`.chip[data-team="${team}"]`).click();
     await page.locator(`.chip[data-role-surface="${roleSurface}"]`).click();
-    await page.getByRole('button', { name: 'Establish Connection' }).click();
+    await page.getByRole('button', { name: 'Join Session' }).click();
     await page.waitForURL(resolveExpectedUrlPattern(roleSurface));
 }
 
@@ -195,7 +195,7 @@ export async function expectJoinFailure(page, joinOptions, expectedMessage) {
     await page.locator('#displayName').fill(joinOptions.displayName);
     await page.locator(`.chip[data-team="${joinOptions.team || 'blue'}"]`).click();
     await page.locator(`.chip[data-role-surface="${joinOptions.roleSurface || 'facilitator'}"]`).click();
-    await page.getByRole('button', { name: 'Establish Connection' }).click();
+    await page.getByRole('button', { name: 'Join Session' }).click();
 
     await expect(page.locator('#joinForm')).toBeVisible();
     await expect(page.locator('#toast-container')).toContainText(expectedMessage);
