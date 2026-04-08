@@ -6,14 +6,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="ESG Economic Statecraft Simulation Platform">
     <title>SSG Platform</title>
-
-  <script type="module" crossorigin src="/assets/main-C3SfBFGS.js"></script>
+
+  <script type="module" crossorigin src="/assets/main-ttzQYhmy.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/supabase-BQbgwcOn.js">
-  <link rel="modulepreload" crossorigin href="/assets/main-WLO6100K.js">
-  <link rel="modulepreload" crossorigin href="/assets/validation-B6xbvvWe.js">
+  <link rel="modulepreload" crossorigin href="/assets/main-Bj4Mtr9K.js">
+  <link rel="modulepreload" crossorigin href="/assets/validation-C4xOqcjM.js">
   <link rel="stylesheet" crossorigin href="/assets/main-Zi4aJJ8H.css">
   <link rel="stylesheet" crossorigin href="/assets/validation-cvd1K-Uc.css">
-  <link rel="stylesheet" crossorigin href="/assets/main-pc3-kgFU.css">
+  <link rel="stylesheet" crossorigin href="/assets/main-BOvKuGEt.css">
 </head>
 
 <body>
@@ -26,6 +26,23 @@
             <p class="boot-label">Strategic Simulations Group</p>
             <div class="boot-progress"><div class="boot-progress-fill"></div></div>
             <span class="boot-status-text" id="ssgBootStatusText">Establishing secure channel</span>
+            <div class="boot-simulation-selector" id="bootSimulationSelector" aria-labelledby="bootSimulationLabel">
+                <p class="boot-selector-label" id="bootSimulationLabel">Select Simulation</p>
+                <div class="boot-simulation-options" role="group" aria-label="Simulation selection">
+                    <button
+                        type="button"
+                        class="boot-simulation-option"
+                        id="bootFracturedOrderOption"
+                        data-simulation="fractured-order"
+                        data-simulation-label="Fractured Order"
+                        aria-pressed="false"
+                        disabled
+                    >
+                        <span class="boot-simulation-title">Fractured Order</span>
+                        <span class="boot-simulation-meta">Seminar simulation</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -36,7 +53,7 @@
 
         <!-- LEFT: poster panel -->
         <aside class="landing-atmosphere">
-            <img src="/assets/fractured_order_poster-CvpZ1oFm.png" alt="Fractured Order — A Seminar Simulation" class="atm-poster">
+            <img src="/assets/fractured_order_poster-BLsGXzrM.png" alt="Fractured Order — A Seminar Simulation" class="atm-poster">
             <footer class="atm-footer">
                 <span>SSG Platform</span>
                 <span class="atm-version">Beta-2</span>
@@ -126,32 +143,77 @@
             </div>
         </main>
     </div>
-
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const status = document.getElementById('ssgBootStatusText');
             const loader = document.getElementById('ssgBootLoader');
             const landing = document.querySelector('.landing');
+            const simulationOptions = Array.from(document.querySelectorAll('.boot-simulation-option'));
 
-            // Status text sequence
-            [[1000,'Synchronizing scenario data'],[2200,'Establishing secure channel'],[3200,'Ready']]
-                .forEach(([delay, text]) => setTimeout(() => { if (status) status.textContent = text; }, delay));
+            const revealLanding = () => {
+                if (landing) {
+                    landing.classList.add('landing--visible');
+                }
 
-            // Cross-fade: landing starts appearing while loader is still on screen.
-            // The left panel shares the same dark navy, so the overlap is seamless.
-            // 1. Landing begins fading in (opacity 0→1 over 1.6s)
-            // 2. 300ms later loader begins fading out (opacity 1→0 over 1.4s)
-            // The net effect is a long dissolve where dark blends into dark.
-            setTimeout(() => {
-                if (landing) landing.classList.add('landing--visible');
-            }, 3000);
-
-            setTimeout(() => {
                 if (loader) {
                     loader.classList.add('hidden');
                     setTimeout(() => loader.remove(), 1600);
                 }
-            }, 3300);
+            };
+
+            const setSelectedSimulation = (button) => {
+                simulationOptions.forEach((option) => {
+                    const isSelected = option === button;
+                    option.classList.toggle('selected', isSelected);
+                    option.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+                });
+
+                const simulationKey = button.dataset.simulation;
+                const simulationLabel = button.dataset.simulationLabel || button.textContent.trim();
+
+                if (status) {
+                    status.textContent = `${simulationLabel} selected`;
+                }
+
+                try {
+                    window.localStorage.setItem('esg_selected_simulation', simulationKey);
+                } catch (error) {
+                    console.warn('Failed to persist selected simulation', error);
+                }
+
+                setTimeout(revealLanding, 150);
+            };
+
+            const unlockSimulationSelection = () => {
+                simulationOptions.forEach((button) => {
+                    button.disabled = false;
+                });
+
+                if (status) {
+                    status.textContent = 'Select a simulation to continue';
+                }
+            };
+
+            simulationOptions.forEach((button) => {
+                button.addEventListener('click', () => {
+                    if (button.disabled) {
+                        return;
+                    }
+
+                    setSelectedSimulation(button);
+                });
+            });
+
+            // Status text sequence
+            [[1000,'Synchronizing scenario data'],[2200,'Establishing secure channel']]
+                .forEach(([delay, text]) => setTimeout(() => { if (status) status.textContent = text; }, delay));
+
+            // Keep the loader onscreen until the user explicitly selects the simulation.
+            // 1. Landing begins fading in (opacity 0→1 over 1.6s)
+            // 2. 300ms later loader begins fading out (opacity 1→0 over 1.4s)
+            // The net effect is a long dissolve where dark blends into dark.
+            setTimeout(unlockSimulationSelection, 3200);
         });
     </script>
 </body>

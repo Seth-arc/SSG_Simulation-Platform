@@ -22,4 +22,13 @@ describe('landing public role visibility', () => {
         expect(html).toContain('operatorWhiteCellSupportBtn');
         expect(html).toContain('operatorGameMasterBtn');
     });
+
+    it('renders a boot-loader simulation selector for Fractured Order', () => {
+        const html = readFileSync(LANDING_HTML_PATH, 'utf8');
+
+        expect(html).toContain('bootSimulationSelector');
+        expect(html).toContain('aria-label="Simulation selection"');
+        expect(html).toContain('data-simulation="fractured-order"');
+        expect(html).toContain('bootFracturedOrderOption');
+    });
 });

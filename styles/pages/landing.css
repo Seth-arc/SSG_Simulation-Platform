@@ -482,6 +482,75 @@ html, body {
     transition: color 0.4s ease;
 }
 
+.boot-simulation-selector {
+    width: min(100%, 320px);
+    margin-top: var(--space-6);
+    opacity: 0;
+    transform: translateY(8px);
+    animation: fadeUp 0.8s var(--ease-butter) 1.5s forwards;
+}
+
+.boot-simulation-options {
+    display: flex;
+    justify-content: center;
+}
+
+.boot-simulation-option {
+    width: 100%;
+    padding: var(--space-4);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: var(--radius-lg);
+    color: rgba(255, 255, 255, 0.88);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        border-color 180ms ease,
+        background 180ms ease,
+        transform 180ms ease,
+        box-shadow 180ms ease;
+}
+
+.boot-simulation-option:disabled {
+    cursor: wait;
+    opacity: 0.48;
+}
+
+.boot-simulation-option:not(:disabled):hover {
+    border-color: rgba(212, 183, 125, 0.6);
+    background: rgba(255, 255, 255, 0.08);
+    transform: translateY(-1px);
+}
+
+.boot-simulation-option:focus-visible {
+    outline: 2px solid var(--color-gold-light);
+    outline-offset: 3px;
+}
+
+.boot-simulation-option.selected,
+.boot-simulation-option[aria-pressed="true"] {
+    border-color: var(--color-gold);
+    background: rgba(185, 151, 91, 0.14);
+    box-shadow: 0 0 0 1px rgba(185, 151, 91, 0.24);
+}
+
+.boot-simulation-title {
+    font-size: var(--text-lg);
+    font-weight: var(--font-semibold);
+    letter-spacing: var(--tracking-wide);
+    color: #ffffff;
+}
+
+.boot-simulation-meta {
+    font-size: var(--text-sm);
+    color: rgba(255, 255, 255, 0.62);
+    letter-spacing: 0.04em;
+}
+
 @keyframes progressFill {
     0%   { width: 0; }
     25%  { width: 28%; }
