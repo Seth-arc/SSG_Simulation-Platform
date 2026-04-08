@@ -282,4 +282,28 @@ describe('GameMaster live session monitoring', () => {
         expect(elements.exportTimelineCsvBtn.disabled).toBe(true);
         expect(elements.exportParticipantsCsvBtn.disabled).toBe(true);
     });
+
+    it('preserves fetched participants when the live participants store is still empty', async () => {
+        mockParticipantsStore.getAll.mockReturnValueOnce([]);
+
+        const { GameMasterController } = await loadGameMasterModule();
+        const controller = new GameMasterController();
+        controller.currentSessionId = 'session-gm-1';
+
+        const liveBundle = controller.buildSelectedLiveBundle({
+            session: {
+                id: 'session-gm-1',
+                name: 'Alpha Session'
+            },
+            gameState: { move: 1, phase: 1 },
+            participants: [{ id: 'participant-fallback-1', display_name: 'Taylor', role: 'viewer' }],
+            actions: [],
+            requests: [],
+            timeline: []
+        });
+
+        expect(liveBundle.participants).toEqual([
+            { id: 'participant-fallback-1', display_name: 'Taylor', role: 'viewer' }
+        ]);
+    });
 });

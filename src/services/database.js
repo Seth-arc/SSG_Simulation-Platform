@@ -133,6 +133,29 @@ function isOperatorRequestResponseUpdate(updates = {}) {
     );
 }
 
+function shouldFallbackActiveParticipantsQuery(error = null) {
+    const message = String(error?.message || '').toLowerCase();
+    return (
+        message.includes('release_stale_session_role_seats')
+        && message.includes('not unique')
+    );
+}
+
+async function fetchActiveParticipantsDirect(sessionId) {
+    const { data, error } = await supabase
+        .from('session_participants')
+        .select('*, participants(name, client_id)')
+        .eq('session_id', sessionId)
+        .eq('is_active', true)
+        .order('joined_at', { ascending: true });
+
+    if (error) {
+        throw fromSupabaseError(error, 'getActiveParticipantsFallback');
+    }
+
+    return (data || []).map((participant) => normalizeParticipantSeatRecord(participant));
+}
+
 function shouldUseOperatorCommunicationPath(commData = {}) {
     const fromRole = String(commData?.from_role || '').trim().toLowerCase();
     return fromRole === 'white_cell';
@@ -659,6 +682,12 @@ export const database = {
         });
 
         if (error) {
+            if (shouldFallbackActiveParticipantsQuery(error)) {
+                logger.warn('Participant roster RPC is ambiguous on this backend. Falling back to direct session_participants read.', {
+                    sessionId
+                });
+                return fetchActiveParticipantsDirect(sessionId);
+            }
             throw fromSupabaseError(error, 'getActiveParticipants');
         }
 

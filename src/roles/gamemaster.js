@@ -86,6 +86,20 @@ function formatParticipantSummaryLabel(participants = []) {
     return `${connected} connected / ${total} total participants`;
 }
 
+function preferLiveCollection(liveItems = [], fallbackItems = []) {
+    if (Array.isArray(liveItems) && liveItems.length > 0) {
+        return liveItems;
+    }
+
+    if (Array.isArray(fallbackItems) && fallbackItems.length > 0) {
+        return fallbackItems;
+    }
+
+    return Array.isArray(liveItems)
+        ? liveItems
+        : (Array.isArray(fallbackItems) ? fallbackItems : []);
+}
+
 export function getGameMasterAccessState(sessionStoreRef = sessionStore) {
     const role = sessionStoreRef.getRole?.() || sessionStoreRef.getSessionData?.()?.role || null;
     const cachedOperatorAccess = role === 'white' && sessionStoreRef.hasOperatorAccess?.(
@@ -328,6 +342,7 @@ export class GameMasterController {
 
         try {
             const bundle = await this.ensureSessionBundle(this.currentSessionId);
+            this.applySelectedLiveBundle(bundle);
             await syncService.initialize(this.currentSessionId);
             this.applySelectedLiveBundle(bundle);
         } catch (error) {
@@ -353,8 +368,10 @@ export class GameMasterController {
             return null;
         }
 
+        const cachedBundle = this.sessionBundles.get(this.currentSessionId) || null;
+        const fallbackBundle = baseBundle || cachedBundle || null;
         const session = baseBundle?.session
-            || this.sessionBundles.get(this.currentSessionId)?.session
+            || cachedBundle?.session
             || this.sessions.find((entry) => entry.id === this.currentSessionId)
             || null;
 
@@ -364,11 +381,11 @@ export class GameMasterController {
 
         return {
             session,
-            gameState: gameStateStore.getState(),
-            participants: participantsStore.getAll(),
-            actions: actionsStore.getAll(),
-            requests: requestsStore.getAll(),
-            timeline: timelineStore.getAll()
+            gameState: gameStateStore.getState() || fallbackBundle?.gameState || null,
+            participants: preferLiveCollection(participantsStore.getAll(), fallbackBundle?.participants),
+            actions: preferLiveCollection(actionsStore.getAll(), fallbackBundle?.actions),
+            requests: preferLiveCollection(requestsStore.getAll(), fallbackBundle?.requests),
+            timeline: preferLiveCollection(timelineStore.getAll(), fallbackBundle?.timeline)
         };
     }
 
