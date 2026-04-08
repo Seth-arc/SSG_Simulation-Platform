@@ -7,12 +7,18 @@ test('session creation, role join, action submit, and White Cell adjudication', 
     await enableE2EMockBackend(context);
 
     const page = await context.newPage();
+    const operatorAccessCode = 'admin2025';
     const sessionName = 'Smoke Session Alpha';
     const sessionCode = 'SMOKE2026';
     const actionGoal = 'Coordinate export controls to reduce semiconductor exposure across allied partners.';
 
     await test.step('create a session from the control panel', async () => {
-        await page.goto('/master.html');
+        await page.goto('/');
+        await page.locator('#displayName').fill('Game Master Operator');
+        await page.locator('#operatorAccessCode').fill(operatorAccessCode);
+        await page.locator('#operatorGameMasterBtn').click();
+        await page.waitForURL(/master\.html/);
+
         await page.locator('.sidebar-link[data-section="sessions"]').click();
         await page.locator('#createSessionBtn').click();
 
@@ -64,8 +70,8 @@ test('session creation, role join, action submit, and White Cell adjudication', 
         await page.locator('#sessionCode').fill(sessionCode);
         await page.locator('#displayName').fill('White Cell Lead');
         await page.locator('.team-option[data-team="blue"]').click();
-        await page.locator('.role-option[data-role-surface="whitecell"]').click();
-        await page.getByRole('button', { name: 'Establish Connection' }).click();
+        await page.locator('#operatorAccessCode').fill(operatorAccessCode);
+        await page.locator('#operatorWhiteCellBtn').click();
 
         await page.waitForURL(/whitecell\.html/);
         await page.locator('.sidebar-link[data-section="adjudication"]').click();

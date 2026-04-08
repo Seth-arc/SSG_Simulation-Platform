@@ -4,8 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="ESG Simulation - Game Master Dashboard">
-    <title>Control Panel - ESG Simulation</title>
+    <meta name="description" content="ESG Simulation - Game Master Operator Console">
+    <title>Game Master Operator Console - ESG Simulation</title>
 
     <!-- Styles -->
 
@@ -213,12 +213,12 @@
             }
         }
     </style>
-  <script type="module" crossorigin src="/assets/master-BZSHJE_G.js"></script>
+  <script type="module" crossorigin src="/assets/master-CrqTR17S.js"></script>
   <link rel="modulepreload" crossorigin href="/assets/supabase-BQbgwcOn.js">
-  <link rel="modulepreload" crossorigin href="/assets/main-D1gA2pbW.js">
+  <link rel="modulepreload" crossorigin href="/assets/main-ZaVdu2y6.js">
   <link rel="modulepreload" crossorigin href="/assets/Modal-O3kyaPUL.js">
-  <link rel="modulepreload" crossorigin href="/assets/formatting-DmmIk096.js">
-  <link rel="modulepreload" crossorigin href="/assets/validation-CjcVGlLd.js">
+  <link rel="modulepreload" crossorigin href="/assets/formatting-ComEAAKd.js">
+  <link rel="modulepreload" crossorigin href="/assets/validation-Dz-X4E40.js">
   <link rel="stylesheet" crossorigin href="/assets/main-BIPW7hAd.css">
   <link rel="stylesheet" crossorigin href="/assets/master-R1S5i-lR.css">
 </head>
@@ -230,7 +230,7 @@
         <!-- Sidebar -->
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-brand">
-                <span>Control Panel</span>
+                <span>Operator Console</span>
             </div>
 
             <nav class="sidebar-nav">
@@ -326,8 +326,8 @@
                     </svg>
                 </button>
                 <div class="header-title-section">
-                    <h1 class="header-title">Game Master Dashboard</h1>
-                    <p class="header-subtitle" id="sessionName">No Active Session</p>
+                    <h1 class="header-title">Game Master Operator Console</h1>
+                    <p class="header-subtitle" id="sessionName">Operator-authenticated session control</p>
                 </div>
             </div>
 
@@ -347,7 +347,7 @@
 
             <div class="header-right">
                 <div class="header-session-info" id="headerSessionInfo">
-                    <span class="badge badge-primary">Administrator</span>
+                    <span class="badge badge-primary">Operator</span>
                     <span class="session-indicator" id="connectionIndicator"></span>
                 </div>
                 <div class="header-actions">
@@ -366,7 +366,7 @@
                     <div class="section-header">
                         <div class="section-title-wrapper">
                             <h2 class="section-title">System Overview</h2>
-                            <p class="section-description">Real-time monitoring of simulation parameters</p>
+                            <p class="section-description">Operator-only monitoring of live simulation parameters</p>
                         </div>
                         <div class="section-actions">
                             <button class="btn btn-outline" id="refreshDashboardBtn">Refresh Data</button>
@@ -427,7 +427,7 @@
                     <div class="section-header">
                         <div class="section-title-wrapper">
                             <h2 class="section-title">Session Management</h2>
-                            <p class="section-description">Initialize and configure simulation instances</p>
+                            <p class="section-description">Operator-only creation and configuration of simulation instances</p>
                         </div>
                         <div class="section-actions">
                             <button class="btn btn-primary" id="createSessionBtn">
@@ -458,7 +458,7 @@
                     <div class="section-header">
                         <div class="section-title-wrapper">
                             <h2 class="section-title">Participant Roster</h2>
-                            <p class="section-description">Manage roles and access for connected users</p>
+                            <p class="section-description">Review public participant seats and operator-scoped activity</p>
                         </div>
                         <div class="section-actions">
                             <label class="sr-only" for="participantsSessionSelect">Select session for participant roster</label>

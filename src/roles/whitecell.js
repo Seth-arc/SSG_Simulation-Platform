@@ -14,7 +14,7 @@ import { formatDateTime, formatRelativeTime } from '../utils/formatting.js';
 import { CONFIG } from '../core/config.js';
 import { ENUMS, canAdjudicateAction } from '../core/enums.js';
 import { navigateToApp } from '../core/navigation.js';
-import { resolveTeamContext } from '../core/teamContext.js';
+import { OPERATOR_SURFACES, resolveTeamContext } from '../core/teamContext.js';
 
 const logger = createLogger('WhiteCell');
 
@@ -60,6 +60,26 @@ export function getWhiteCellDomContract(documentRef = document) {
     };
 }
 
+export function getWhiteCellAccessState(teamContext, sessionStoreRef = sessionStore) {
+    const sessionId = sessionStoreRef.getSessionId?.() || sessionStoreRef.getSessionData?.()?.id || null;
+    const role = sessionStoreRef.getRole?.() || sessionStoreRef.getSessionData?.()?.role || null;
+    const allowed = Boolean(
+        sessionId &&
+        role === teamContext.whitecellRole &&
+        sessionStoreRef.hasOperatorAccess?.(OPERATOR_SURFACES.WHITE_CELL, {
+            sessionId,
+            teamId: teamContext.teamId,
+            role: teamContext.whitecellRole
+        })
+    );
+
+    return {
+        allowed,
+        sessionId,
+        role
+    };
+}
+
 export class WhiteCellController {
     constructor() {
         this.actions = [];
@@ -76,29 +96,17 @@ export class WhiteCellController {
     async init() {
         logger.info('Initializing White Cell interface');
 
-        const sessionId = sessionStore.getSessionId();
-        if (!sessionId) {
+        const accessState = getWhiteCellAccessState(this.teamContext, sessionStore);
+        if (!accessState.allowed) {
             showToast({
-                message: 'No session found. Please join a session first.',
+                message: `${this.teamContext.whitecellLabel} requires operator authorization from the landing page.`,
                 type: 'error'
             });
-            setTimeout(() => {
-                navigateToApp('');
-            }, 2000);
+            navigateToApp('index.html#operatorAccessSection', { replace: true });
             return;
         }
 
-        const role = sessionStore.getRole() || sessionStore.getSessionData()?.role;
-        if (role !== this.teamContext.whitecellRole) {
-            showToast({
-                message: `This page is only available to the ${this.teamContext.whitecellLabel} role.`,
-                type: 'error'
-            });
-            setTimeout(() => {
-                navigateToApp('');
-            }, 2000);
-            return;
-        }
+        const sessionId = accessState.sessionId;
 
         this.configureTeamLabels();
         this.bindEventListeners();

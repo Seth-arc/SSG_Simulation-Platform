@@ -205,4 +205,42 @@ describe('sessionStore snapshot model', () => {
             }
         });
     });
+
+    it('persists scoped operator auth separately from public participant session data', async () => {
+        let module = await loadSessionStore();
+
+        module.sessionStore.setOperatorAuth({
+            surface: 'whitecell',
+            sessionId: 'session-operator',
+            sessionCode: 'alpha-2026',
+            teamId: 'blue',
+            role: 'blue_whitecell',
+            operatorName: 'White Cell Lead'
+        });
+
+        expect(module.sessionStore.hasOperatorAccess('whitecell', {
+            sessionId: 'session-operator',
+            teamId: 'blue',
+            role: 'blue_whitecell'
+        })).toBe(true);
+        expect(module.sessionStore.hasOperatorAccess('whitecell', {
+            sessionId: 'session-operator',
+            teamId: 'red',
+            role: 'blue_whitecell'
+        })).toBe(false);
+        expect(module.sessionStore.hasOperatorAccess('gamemaster', {
+            role: 'white'
+        })).toBe(false);
+
+        module = await loadSessionStore();
+
+        expect(module.sessionStore.getOperatorAuth()).toMatchObject({
+            surfaces: ['whitecell'],
+            sessionId: 'session-operator',
+            sessionCode: 'ALPHA-2026',
+            teamId: 'blue',
+            role: 'blue_whitecell',
+            operatorName: 'White Cell Lead'
+        });
+    });
 });

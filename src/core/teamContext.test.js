@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    OPERATOR_SURFACES,
+    PUBLIC_ROLE_SURFACES,
     ROLE_SURFACES,
     buildTeamRole,
     getRoleDisplayName,
     getRoleRoute,
+    isOperatorSurface,
+    isPublicRoleSurface,
     resolveTeamContext
 } from './teamContext.js';
 
@@ -39,5 +43,18 @@ describe('teamContext', () => {
         expect(context.notetakerRoute).toBe('/repo-slug/teams/green/notetaker.html');
         expect(getRoleDisplayName('green_notetaker')).toBe('Green Team Notetaker');
         expect(getRoleDisplayName('viewer', { observerTeamId: 'green' })).toBe('Green Team Observer');
+    });
+
+    it('defines explicit public and operator surface boundaries', () => {
+        expect(PUBLIC_ROLE_SURFACES).toEqual([
+            ROLE_SURFACES.FACILITATOR,
+            ROLE_SURFACES.NOTETAKER,
+            ROLE_SURFACES.VIEWER
+        ]);
+
+        expect(isPublicRoleSurface(ROLE_SURFACES.WHITECELL)).toBe(false);
+        expect(isPublicRoleSurface(ROLE_SURFACES.VIEWER)).toBe(true);
+        expect(isOperatorSurface(OPERATOR_SURFACES.GAME_MASTER)).toBe(true);
+        expect(isOperatorSurface(OPERATOR_SURFACES.WHITE_CELL)).toBe(true);
     });
 });

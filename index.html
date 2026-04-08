@@ -309,22 +309,39 @@
             box-shadow: var(--shadow-lg);
         }
 
-        .gm-access {
-            text-align: center;
+        .operator-access {
             margin-top: var(--space-6);
             padding-top: var(--space-4);
             border-top: 1px solid var(--color-border-subtle);
         }
 
-        .gm-access a {
+        .operator-copy {
             font-size: var(--text-sm);
             color: var(--color-text-muted);
-            transition: color var(--transition-fast);
+            margin-bottom: var(--space-4);
+            line-height: 1.6;
         }
 
-        .gm-access a:hover {
-            color: var(--color-navy);
-            text-decoration: none;
+        .operator-actions {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--space-3);
+        }
+
+        .operator-actions .btn {
+            width: 100%;
+        }
+
+        @media (max-width: 768px) {
+            .operator-actions {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .operator-access-note {
+            font-size: var(--text-sm);
+            color: var(--color-text-muted);
+            margin-top: var(--space-3);
         }
 
         /* Animations */
@@ -603,11 +620,16 @@
                     <span class="landing-eyebrow">Strategic Simulations Group</span>
                     <h1 class="landing-title">Strategic Economic Competition</h1>
                     <p class="landing-description">
-                        Join your designated session.
+                        Public participants join by session code as Facilitator, Notetaker, or Observer.
+                        White Cell and Game Master use operator-only access.
                     </p>
                 </div>
 
                 <div class="session-card">
+                    <div class="card-header">
+                        <h2 class="card-title">Public Participant Join</h2>
+                        <p class="card-subtitle">Session-code access is limited to Facilitator, Notetaker, and Observer.</p>
+                    </div>
 
                     <!-- Resume Section (shown if active session exists) -->
                     <div id="resumeSection"></div>
@@ -680,18 +702,6 @@
                                     <span class="role-desc">Capture observations and move notes</span>
                                 </button>
 
-                                <button type="button" class="role-option" data-role-surface="whitecell" aria-pressed="false">
-                                    <div class="role-icon">
-                                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false">
-                                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                                        </svg>
-                                    </div>
-                                    <span class="role-name">White Cell</span>
-                                    <span class="role-desc">Review RFIs and adjudicate actions</span>
-                                </button>
-
                                 <button type="button" class="role-option" data-role-surface="viewer" aria-pressed="false">
                                     <div class="role-icon">
                                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
@@ -710,8 +720,23 @@
                         <button type="submit" class="btn btn-primary btn-full-width">Establish Connection</button>
                     </form>
 
-                    <div class="gm-access">
-                        <a href="./master.html" id="gameMasterLink">Control Panel Access</a>
+                    <section class="operator-access" id="operatorAccessSection" aria-labelledby="operatorAccessTitle">
+                        <h2 class="card-title" id="operatorAccessTitle">Operator Access</h2>
+                        <p class="operator-copy">
+                            White Cell and Game Master are not public session-code seats. Enter the operator access code to open those surfaces.
+                        </p>
+                        <div class="form-group">
+                            <label class="form-label" for="operatorAccessCode">Operator Access Code</label>
+                            <input type="password" id="operatorAccessCode" class="form-input" autocomplete="current-password">
+                        </div>
+                        <div class="operator-actions">
+                            <button type="button" class="btn btn-outline" id="operatorWhiteCellBtn">Open White Cell</button>
+                            <button type="button" class="btn btn-outline" id="operatorGameMasterBtn">Open Game Master</button>
+                        </div>
+                        <p class="operator-access-note">
+                            White Cell uses the session code and selected team above. Game Master access is operator-only and not claimable through public join.
+                        </p>
+                    </section>
                     </div>
                 </div>
             </div>

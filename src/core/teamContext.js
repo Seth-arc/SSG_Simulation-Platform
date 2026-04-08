@@ -12,6 +12,17 @@ export const ROLE_SURFACES = Object.freeze({
     VIEWER: 'viewer'
 });
 
+export const PUBLIC_ROLE_SURFACES = Object.freeze([
+    ROLE_SURFACES.FACILITATOR,
+    ROLE_SURFACES.NOTETAKER,
+    ROLE_SURFACES.VIEWER
+]);
+
+export const OPERATOR_SURFACES = Object.freeze({
+    GAME_MASTER: 'gamemaster',
+    WHITE_CELL: ROLE_SURFACES.WHITECELL
+});
+
 export const TEAM_OPTIONS = Object.freeze([
     { id: 'blue', label: 'Blue Team', shortLabel: 'Blue' },
     { id: 'red', label: 'Red Team', shortLabel: 'Red' },
@@ -28,6 +39,14 @@ export function getTeamConfig(teamId = 'blue') {
 
 export function isSupportedTeam(teamId) {
     return Boolean(TEAM_MAP[teamId]);
+}
+
+export function isPublicRoleSurface(surface = '') {
+    return PUBLIC_ROLE_SURFACES.includes(surface);
+}
+
+export function isOperatorSurface(surface = '') {
+    return Object.values(OPERATOR_SURFACES).includes(surface);
 }
 
 export function buildTeamRole(teamId, surface) {

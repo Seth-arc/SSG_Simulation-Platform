@@ -4,6 +4,7 @@
  */
 
 import { createLogger } from '../utils/logger.js';
+import { OPERATOR_SURFACES, isOperatorSurface } from '../core/teamContext.js';
 
 const logger = createLogger('SessionStore');
 
@@ -12,6 +13,7 @@ let currentClientId = null;
 let currentRole = null;
 let currentUserName = null;
 let currentSessionData = null;
+let currentOperatorAuth = null;
 let initialized = false;
 let storageListenerBound = false;
 
@@ -38,6 +40,67 @@ function persistSessionData() {
     }
 
     localStorage.removeItem('esg_session_data');
+}
+
+function normalizeOperatorAuth(auth) {
+    if (!auth || typeof auth !== 'object') {
+        return null;
+    }
+
+    const rawSurfaces = Array.isArray(auth.surfaces)
+        ? auth.surfaces
+        : (auth.surface ? [auth.surface] : []);
+    const surfaces = [...new Set(rawSurfaces.filter((surface) => isOperatorSurface(surface)))];
+
+    if (!surfaces.length) {
+        return null;
+    }
+
+    const normalizeString = (value, { uppercase = false } = {}) => {
+        if (typeof value !== 'string') {
+            return null;
+        }
+
+        const normalizedValue = value.trim();
+        if (!normalizedValue) {
+            return null;
+        }
+
+        return uppercase ? normalizedValue.toUpperCase() : normalizedValue;
+    };
+
+    return {
+        surfaces,
+        operatorName: normalizeString(auth.operatorName),
+        sessionId: normalizeString(auth.sessionId),
+        sessionCode: normalizeString(auth.sessionCode, { uppercase: true }),
+        teamId: normalizeString(auth.teamId),
+        role: normalizeString(auth.role),
+        grantedAt: normalizeString(auth.grantedAt) || new Date().toISOString()
+    };
+}
+
+function readOperatorAuthFromStorage() {
+    const cachedData = localStorage.getItem('esg_operator_auth');
+    if (!cachedData) {
+        return null;
+    }
+
+    try {
+        return normalizeOperatorAuth(JSON.parse(cachedData));
+    } catch (error) {
+        logger.warn('Failed to parse cached operator auth');
+        return null;
+    }
+}
+
+function persistOperatorAuth() {
+    if (currentOperatorAuth) {
+        localStorage.setItem('esg_operator_auth', JSON.stringify(currentOperatorAuth));
+        return;
+    }
+
+    localStorage.removeItem('esg_operator_auth');
 }
 
 function buildDefaultGameState() {
@@ -72,6 +135,11 @@ function syncSessionIdFromStorage() {
     }
 
     return currentSessionId;
+}
+
+function syncOperatorAuthFromStorage() {
+    currentOperatorAuth = readOperatorAuthFromStorage();
+    return currentOperatorAuth;
 }
 
 function getEffectiveSessionData() {
@@ -131,6 +199,7 @@ function buildSnapshot() {
         clientId: currentClientId,
         role: currentRole,
         userName: currentUserName,
+        operatorAuth: syncOperatorAuthFromStorage(),
         issues,
         sessionData: sessionId ? getEffectiveSessionData() : null
     };
@@ -171,6 +240,10 @@ function bindStorageListener() {
             currentSessionData = readSessionDataFromStorage();
         }
 
+        if (event.key === 'esg_operator_auth') {
+            currentOperatorAuth = readOperatorAuthFromStorage();
+        }
+
         notifyListeners();
     });
 
@@ -184,6 +257,7 @@ export const sessionStore = {
         currentRole = localStorage.getItem('esg_role');
         currentUserName = localStorage.getItem('esg_user_name');
         currentSessionData = readSessionDataFromStorage();
+        currentOperatorAuth = readOperatorAuthFromStorage();
 
         if (currentSessionData?.id && currentSessionId && currentSessionData.id !== currentSessionId) {
             currentSessionData = null;
@@ -303,6 +377,58 @@ export const sessionStore = {
         return getEffectiveSessionData();
     },
 
+    getOperatorAuth() {
+        return syncOperatorAuthFromStorage();
+    },
+
+    setOperatorAuth(auth) {
+        currentOperatorAuth = normalizeOperatorAuth(auth);
+        persistOperatorAuth();
+        notifyListeners();
+        return currentOperatorAuth;
+    },
+
+    clearOperatorAuth() {
+        currentOperatorAuth = null;
+        persistOperatorAuth();
+        notifyListeners();
+    },
+
+    hasOperatorAccess(surface, {
+        sessionId = null,
+        teamId = null,
+        role = null
+    } = {}) {
+        if (!isOperatorSurface(surface)) {
+            return false;
+        }
+
+        const auth = syncOperatorAuthFromStorage();
+        if (!auth?.surfaces?.includes(surface)) {
+            return false;
+        }
+
+        if (role && auth.role !== role) {
+            return false;
+        }
+
+        if (surface === OPERATOR_SURFACES.WHITE_CELL) {
+            if (!auth.sessionId || !auth.teamId || !auth.role) {
+                return false;
+            }
+
+            if (sessionId && auth.sessionId !== sessionId) {
+                return false;
+            }
+
+            if (teamId && auth.teamId !== teamId) {
+                return false;
+            }
+        }
+
+        return true;
+    },
+
     setSessionData(data) {
         if (!data) {
             currentSessionData = buildDefaultSessionData();
@@ -379,11 +505,13 @@ export const sessionStore = {
         currentRole = null;
         currentUserName = null;
         currentSessionData = null;
+        currentOperatorAuth = null;
 
         localStorage.removeItem('esg_session_id');
         localStorage.removeItem('esg_role');
         localStorage.removeItem('esg_user_name');
         localStorage.removeItem('esg_session_data');
+        localStorage.removeItem('esg_operator_auth');
 
         notifyListeners();
     },

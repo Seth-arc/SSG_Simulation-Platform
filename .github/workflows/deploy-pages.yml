@@ -32,6 +32,12 @@ jobs:
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
+        with:
+          # Custom workflow publishing requires Pages to exist first.
+          # If PAGES_ENABLEMENT_TOKEN is provided, configure-pages can bootstrap
+          # the repository for GitHub Actions publishing on the first run.
+          token: ${{ secrets.PAGES_ENABLEMENT_TOKEN != '' && secrets.PAGES_ENABLEMENT_TOKEN || github.token }}
+          enablement: ${{ secrets.PAGES_ENABLEMENT_TOKEN != '' }}
 
       - name: Install dependencies
         run: npm ci
@@ -43,7 +49,7 @@ jobs:
         run: touch dist/.nojekyll
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: dist
 

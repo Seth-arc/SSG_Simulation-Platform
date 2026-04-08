@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
     buildDashboardModel,
     buildExportSelectionState,
     buildRecentActivityModel,
+    getGameMasterAccessState,
     getAdminExportButtonConfig
 } from './gamemaster.js';
 
@@ -87,5 +88,33 @@ describe('GameMaster export wiring', () => {
             disabled: false,
             message: 'Exporting data for Alpha.'
         });
+    });
+});
+
+describe('GameMaster operator access', () => {
+    it('blocks access when operator auth is missing', () => {
+        expect(getGameMasterAccessState({
+            getRole: () => null,
+            getSessionData: () => null,
+            hasOperatorAccess: () => false
+        })).toEqual({
+            allowed: false,
+            role: null
+        });
+    });
+
+    it('allows access only when the operator grant matches the Game Master surface', () => {
+        const hasOperatorAccess = vi.fn(() => true);
+
+        expect(getGameMasterAccessState({
+            getRole: () => 'white',
+            getSessionData: () => ({ role: 'white' }),
+            hasOperatorAccess
+        })).toEqual({
+            allowed: true,
+            role: 'white'
+        });
+
+        expect(hasOperatorAccess).toHaveBeenCalledWith('gamemaster', { role: 'white' });
     });
 });

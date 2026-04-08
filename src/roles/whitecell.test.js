@@ -99,4 +99,42 @@ describe('White Cell DOM contract', () => {
         expect(controller.advanceMove).toHaveBeenCalledTimes(1);
         expect(controller.handleCommunicationSubmit).toHaveBeenCalledTimes(1);
     });
+
+    it('blocks access without a matching operator grant and enforces team/session scope', async () => {
+        const { getWhiteCellAccessState } = await loadWhiteCellModule();
+        const teamContext = {
+            teamId: 'blue',
+            whitecellRole: 'blue_whitecell'
+        };
+
+        expect(getWhiteCellAccessState(teamContext, {
+            getSessionId: () => 'session-1',
+            getSessionData: () => ({ role: 'blue_whitecell' }),
+            getRole: () => 'blue_whitecell',
+            hasOperatorAccess: () => false
+        })).toMatchObject({
+            allowed: false,
+            sessionId: 'session-1',
+            role: 'blue_whitecell'
+        });
+
+        const hasOperatorAccess = vi.fn(() => true);
+
+        expect(getWhiteCellAccessState(teamContext, {
+            getSessionId: () => 'session-1',
+            getSessionData: () => ({ role: 'blue_whitecell' }),
+            getRole: () => 'blue_whitecell',
+            hasOperatorAccess
+        })).toMatchObject({
+            allowed: true,
+            sessionId: 'session-1',
+            role: 'blue_whitecell'
+        });
+
+        expect(hasOperatorAccess).toHaveBeenCalledWith('whitecell', {
+            sessionId: 'session-1',
+            teamId: 'blue',
+            role: 'blue_whitecell'
+        });
+    });
 });

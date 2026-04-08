@@ -1,4 +1,5 @@
 import { database } from '../services/database.js';
+import { sessionStore } from '../stores/session.js';
 import { getRuntimeConfigStatus } from '../services/supabase.js';
 import { createLogger } from '../utils/logger.js';
 import { showToast } from '../components/ui/Toast.js';
@@ -17,6 +18,8 @@ import {
     exportSessionParticipantsCsv,
     openPrintableReportFromData
 } from '../features/export/index.js';
+import { navigateToApp } from '../core/navigation.js';
+import { OPERATOR_SURFACES } from '../core/teamContext.js';
 
 const logger = createLogger('GameMaster');
 
@@ -39,6 +42,19 @@ function buildFallbackBundle(session) {
         actions: [],
         requests: [],
         timeline: []
+    };
+}
+
+export function getGameMasterAccessState(sessionStoreRef = sessionStore) {
+    const role = sessionStoreRef.getRole?.() || sessionStoreRef.getSessionData?.()?.role || null;
+    const allowed = role === 'white' && sessionStoreRef.hasOperatorAccess?.(
+        OPERATOR_SURFACES.GAME_MASTER,
+        { role: 'white' }
+    );
+
+    return {
+        allowed,
+        role
     };
 }
 
@@ -118,6 +134,14 @@ export class GameMasterController {
 
     async init() {
         logger.info('Initializing Game Master interface');
+        const accessState = getGameMasterAccessState(sessionStore);
+        if (!accessState.allowed) {
+            logger.warn('Blocked direct Game Master access without operator auth');
+            showToast('Game Master access requires operator authorization from the landing page.', { type: 'error' });
+            navigateToApp('index.html#operatorAccessSection', { replace: true });
+            return;
+        }
+
         if (!getRuntimeConfigStatus().ready) {
             logger.error('Game Master page blocked: backend configuration is missing');
             return;
@@ -885,7 +909,10 @@ export class GameMasterController {
 
 const gameMasterController = new GameMasterController();
 
-if (typeof document !== 'undefined') {
+const shouldAutoInitGameMaster = typeof document !== 'undefined' &&
+    !globalThis.__ESG_DISABLE_AUTO_INIT__;
+
+if (shouldAutoInitGameMaster) {
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
             void gameMasterController.init();
@@ -895,7 +922,7 @@ if (typeof document !== 'undefined') {
     }
 }
 
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && shouldAutoInitGameMaster) {
     window.addEventListener('beforeunload', () => gameMasterController.destroy());
 }
 

@@ -15,7 +15,9 @@ import { validateSessionCode } from '../utils/validation.js';
 import { CONFIG } from '../core/config.js';
 import { navigateToApp } from '../core/navigation.js';
 import {
+    OPERATOR_SURFACES,
     TEAM_OPTIONS,
+    isPublicRoleSurface,
     ROLE_SURFACES,
     buildTeamRole,
     getRoleDisplayName,
@@ -78,14 +80,15 @@ class LandingController {
             button.addEventListener('click', () => this.selectRole(button));
         });
 
-        // Game Master link
-        const gmLink = document.getElementById('gameMasterLink');
-        if (gmLink) {
-            gmLink.addEventListener('click', (e) => {
-                e.preventDefault();
-                navigateToApp('master.html');
-            });
-        }
+        const gameMasterAccessBtn = document.getElementById('operatorGameMasterBtn');
+        gameMasterAccessBtn?.addEventListener('click', () => {
+            void this.handleOperatorAccess(OPERATOR_SURFACES.GAME_MASTER);
+        });
+
+        const whiteCellAccessBtn = document.getElementById('operatorWhiteCellBtn');
+        whiteCellAccessBtn?.addEventListener('click', () => {
+            void this.handleOperatorAccess(OPERATOR_SURFACES.WHITE_CELL);
+        });
 
         // Leave session button (if shown)
         const leaveBtn = document.getElementById('leaveSessionBtn');
@@ -164,6 +167,15 @@ class LandingController {
      * @param {HTMLElement} button - Role button element
      */
     selectRole(button) {
+        const requestedSurface = button.dataset.roleSurface || null;
+        if (!isPublicRoleSurface(requestedSurface)) {
+            showToast({
+                message: 'White Cell and Game Master require operator authorization.',
+                type: 'error'
+            });
+            return;
+        }
+
         // Deselect all
         document.querySelectorAll('.role-option').forEach(btn => {
             btn.classList.remove('selected');
@@ -173,7 +185,7 @@ class LandingController {
         // Select this one
         button.classList.add('selected');
         button.setAttribute('aria-pressed', 'true');
-        this.selectedRoleSurface = button.dataset.roleSurface || null;
+        this.selectedRoleSurface = requestedSurface;
         this.updateSelectedRole();
 
         logger.debug('Role selected:', this.selectedRole);
@@ -227,22 +239,18 @@ class LandingController {
             return;
         }
 
+        if (!isPublicRoleSurface(this.selectedRoleSurface)) {
+            showToast({
+                message: 'White Cell and Game Master use the operator access flow.',
+                type: 'error'
+            });
+            return;
+        }
+
         const loader = showLoader({ message: 'Joining session...' });
 
         try {
-            // Find session by code - session_code is stored in metadata.session_code
-            const allSessions = await database.getActiveSessions();
-            const sessions = allSessions.filter(s => {
-                // Session code is stored in metadata.session_code
-                const code = s.metadata?.session_code;
-                return code && code.toUpperCase() === sessionCode;
-            });
-
-            if (!sessions || sessions.length === 0) {
-                throw new Error('Session not found. Please check the code and try again.');
-            }
-
-            const session = sessions[0];
+            const session = await this.findSessionByCode(sessionCode);
             const sessionCodeFromMetadata = session.metadata?.session_code;
 
             // Check role availability
@@ -261,6 +269,7 @@ class LandingController {
             const participant = await database.registerParticipant(session.id, this.selectedRole, displayName);
 
             // Store session data
+            sessionStore.clearOperatorAuth();
             sessionStore.setSessionId(session.id);
             sessionStore.setRole(this.selectedRole);
             sessionStore.setUserName(displayName);
@@ -297,6 +306,135 @@ class LandingController {
         } finally {
             hideLoader();
         }
+    }
+
+    async handleOperatorAccess(surface) {
+        const operatorCodeInput = document.getElementById('operatorAccessCode');
+        const operatorCode = operatorCodeInput?.value?.trim();
+
+        if (!this.validateOperatorAccessCode(operatorCode)) {
+            showToast({
+                message: 'A valid operator access code is required.',
+                type: 'error'
+            });
+            operatorCodeInput?.focus();
+            return;
+        }
+
+        const loader = showLoader({
+            message: surface === OPERATOR_SURFACES.GAME_MASTER
+                ? 'Authorizing Game Master...'
+                : 'Authorizing White Cell...'
+        });
+
+        try {
+            if (surface === OPERATOR_SURFACES.GAME_MASTER) {
+                this.authorizeGameMaster();
+                return;
+            }
+
+            await this.authorizeWhiteCell();
+        } catch (err) {
+            logger.error('Failed to authorize operator access:', err);
+            showToast({
+                message: err.message || 'Failed to authorize operator access',
+                type: 'error'
+            });
+        } finally {
+            hideLoader();
+        }
+    }
+
+    validateOperatorAccessCode(operatorCode) {
+        return Boolean(
+            operatorCode &&
+            operatorCode === CONFIG.OPERATOR_ACCESS_CODE
+        );
+    }
+
+    async findSessionByCode(sessionCode) {
+        // Prompt 3 replaces this temporary browser-side lookup with a server-side join path.
+        const allSessions = await database.getActiveSessions();
+        const session = (allSessions || []).find((candidate) => {
+            const code = candidate.metadata?.session_code;
+            return code && code.toUpperCase() === sessionCode;
+        });
+
+        if (!session) {
+            throw new Error('Session not found. Please check the code and try again.');
+        }
+
+        return session;
+    }
+
+    authorizeGameMaster() {
+        const operatorName = document.getElementById('displayName')?.value?.trim() || 'Game Master Operator';
+
+        sessionStore.clear();
+        sessionStore.setRole('white');
+        sessionStore.setUserName(operatorName);
+        sessionStore.setOperatorAuth({
+            surface: OPERATOR_SURFACES.GAME_MASTER,
+            role: 'white',
+            operatorName
+        });
+
+        showToast({ message: 'Operator access granted.', type: 'success' });
+        navigateToApp('master.html');
+    }
+
+    async authorizeWhiteCell() {
+        const codeInput = document.getElementById('sessionCode');
+        const sessionCode = codeInput?.value?.trim().toUpperCase();
+        const operatorName = document.getElementById('displayName')?.value?.trim()
+            || `${getRoleDisplayName(buildTeamRole(this.selectedTeam, ROLE_SURFACES.WHITECELL))} Operator`;
+
+        const codeError = validateSessionCode(sessionCode);
+        if (codeError) {
+            showToast({ message: codeError, type: 'error' });
+            codeInput?.focus();
+            return;
+        }
+
+        const session = await this.findSessionByCode(sessionCode);
+        const sessionCodeFromMetadata = session.metadata?.session_code || sessionCode;
+        const whiteCellRole = buildTeamRole(this.selectedTeam, ROLE_SURFACES.WHITECELL);
+
+        sessionStore.clear();
+        sessionStore.setSessionId(session.id);
+        sessionStore.setRole(whiteCellRole);
+        sessionStore.setUserName(operatorName);
+        sessionStore.setSessionData({
+            id: session.id,
+            name: session.name,
+            code: sessionCodeFromMetadata,
+            participantId: null,
+            role: whiteCellRole,
+            displayName: operatorName,
+            team: this.selectedTeam,
+            roleSurface: ROLE_SURFACES.WHITECELL,
+            operatorMode: true
+        });
+        sessionStore.setOperatorAuth({
+            surface: OPERATOR_SURFACES.WHITE_CELL,
+            sessionId: session.id,
+            sessionCode: sessionCodeFromMetadata,
+            teamId: this.selectedTeam,
+            role: whiteCellRole,
+            operatorName
+        });
+
+        try {
+            const gameState = await database.getGameState(session.id);
+            if (gameState) {
+                sessionStore.setGameState(gameState);
+            }
+        } catch (error) {
+            logger.warn('Failed to preload White Cell game state:', error);
+        }
+
+        showToast({ message: 'Operator access granted.', type: 'success' });
+        this.redirectToRole(whiteCellRole);
     }
 
     /**

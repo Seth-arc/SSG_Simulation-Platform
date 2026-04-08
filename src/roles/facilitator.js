@@ -25,12 +25,49 @@ import {
     isAdjudicatedAction,
     isSubmittedAction
 } from '../core/enums.js';
-import { getTeamResponseTargets, resolveTeamContext } from '../core/teamContext.js';
+import { getRoleRoute, getTeamResponseTargets, resolveTeamContext } from '../core/teamContext.js';
 import { navigateToApp } from '../core/navigation.js';
 
 const logger = createLogger('Facilitator');
 
-class FacilitatorController {
+export function getFacilitatorAccessState({
+    role,
+    teamContext,
+    observerTeamId = null
+}) {
+    if (role === teamContext.facilitatorRole) {
+        return {
+            allowed: true,
+            readOnly: false,
+            reason: null
+        };
+    }
+
+    if (role === ENUMS.ROLES.VIEWER && observerTeamId === teamContext.teamId) {
+        return {
+            allowed: true,
+            readOnly: true,
+            reason: null
+        };
+    }
+
+    if (role === ENUMS.ROLES.VIEWER) {
+        return {
+            allowed: false,
+            readOnly: true,
+            reason: 'observer-team-mismatch',
+            observerTeamId
+        };
+    }
+
+    return {
+        allowed: false,
+        readOnly: false,
+        reason: 'role-mismatch'
+    };
+}
+
+export class FacilitatorController {
     constructor() {
         this.actions = [];
         this.rfis = [];
@@ -61,18 +98,28 @@ class FacilitatorController {
         }
 
         this.role = sessionStore.getRole() || sessionStore.getSessionData()?.role;
-        if (!this.isAllowedRole(this.role)) {
+        const observerTeamId = sessionStore.getSessionData()?.team || null;
+        const accessState = getFacilitatorAccessState({
+            role: this.role,
+            teamContext: this.teamContext,
+            observerTeamId
+        });
+
+        if (!accessState.allowed) {
+            const redirectPath = accessState.reason === 'observer-team-mismatch' && accessState.observerTeamId
+                ? getRoleRoute(ENUMS.ROLES.VIEWER, { observerTeamId: accessState.observerTeamId })
+                : '';
             showToast({
-                message: `This page is only available to the ${this.teamLabel} Facilitator or Observer role.`,
+                message: accessState.reason === 'observer-team-mismatch'
+                    ? 'Observer access is limited to the team selected when you joined the session.'
+                    : `This page is only available to the ${this.teamLabel} Facilitator or Observer role.`,
                 type: 'error'
             });
-            setTimeout(() => {
-                navigateToApp('');
-            }, 2000);
+            navigateToApp(redirectPath || '', { replace: true });
             return;
         }
 
-        this.isReadOnly = this.role === ENUMS.ROLES.VIEWER;
+        this.isReadOnly = accessState.readOnly;
 
         this.configureAccessMode();
         this.bindEventListeners();
@@ -125,7 +172,7 @@ class FacilitatorController {
                 notice.innerHTML = `
                     <h2 class="font-semibold mb-2">Observer Mode</h2>
                     <p class="text-sm text-gray-600">
-                        This page is read-only for the viewer role. You can review facilitator actions,
+                        This page is read-only for the observer role. You can review facilitator actions,
                         White Cell responses, and the timeline, but create, edit, submit, delete, and
                         capture controls are disabled.
                     </p>
@@ -1120,12 +1167,18 @@ class FacilitatorController {
 
 const facilitatorController = new FacilitatorController();
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => facilitatorController.init());
-} else {
-    facilitatorController.init();
-}
+const shouldAutoInitFacilitator = typeof document !== 'undefined' &&
+    typeof window !== 'undefined' &&
+    !globalThis.__ESG_DISABLE_AUTO_INIT__;
 
-window.addEventListener('beforeunload', () => facilitatorController.destroy());
+if (shouldAutoInitFacilitator) {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => facilitatorController.init());
+    } else {
+        facilitatorController.init();
+    }
+
+    window.addEventListener('beforeunload', () => facilitatorController.destroy());
+}
 
 export default facilitatorController;
