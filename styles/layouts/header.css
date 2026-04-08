@@ -7,10 +7,11 @@
 .page-header {
     background: var(--color-surface);
     color: var(--color-text);
-    padding: var(--space-sm) var(--space-md);
+    padding: var(--space-2) var(--space-md);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: var(--space-4);
     border-bottom: 1px solid var(--color-border);
     box-shadow: var(--shadow-sm);
     position: fixed;
@@ -32,18 +33,23 @@
     display: flex;
     align-items: center;
     gap: var(--space-3);
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .header-center {
     display: flex;
     align-items: center;
     gap: var(--space-4);
+    flex: 0 1 auto;
+    min-width: 0;
 }
 
 .header-right {
     display: flex;
     align-items: center;
     gap: var(--space-3);
+    flex: 0 0 auto;
 }
 
 /* Header menu button */
@@ -61,6 +67,9 @@
 .header-title-section {
     display: flex;
     flex-direction: column;
+    justify-content: center;
+    gap: var(--space-1);
+    min-width: 0;
 }
 
 .header-title {
@@ -70,6 +79,7 @@
     color: var(--color-navy);
     line-height: 1.1;
     letter-spacing: -0.01em;
+    margin: 0;
 }
 
 .header-subtitle {
@@ -79,7 +89,12 @@
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-top: 2px;
+    line-height: var(--leading-tight);
+    margin: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Game state display */
@@ -309,12 +324,15 @@
     background: var(--color-surface-alt);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-full);
+    flex-shrink: 0;
 }
 
 .session-role {
     font-size: var(--text-base);
     font-weight: var(--font-medium);
     color: var(--color-text-secondary);
+    line-height: var(--leading-tight);
+    white-space: nowrap;
 }
 
 .session-indicator {
@@ -381,7 +399,7 @@
 /* Responsive */
 @media (max-width: 768px) {
     .header {
-        padding: var(--space-xs) var(--space-sm);
+        padding: var(--space-1) var(--space-sm);
     }
 
     .header-controls {
