@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { mergeNotetakerRecord } from '../services/database.js';
 import {
     DEFAULT_ALLIANCE_DATA,
     DEFAULT_DYNAMICS_DATA,
+    NotetakerController,
     NOTETAKER_TIMELINE_EVENT_SOURCE,
     buildNotetakerViewState,
     buildNotetakerSaveTimelineEvent,
@@ -11,6 +12,76 @@ import {
     getNotetakerRecordForMove,
     isObservationCaptureEvent
 } from './notetaker.js';
+
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function createFakeElement(id = null, tagName = 'div') {
+    let textContent = '';
+    let explicitInnerHtml = null;
+
+    return {
+        id,
+        tagName: tagName.toUpperCase(),
+        className: '',
+        style: {},
+        dataset: {},
+        get textContent() {
+            return textContent;
+        },
+        set textContent(value) {
+            textContent = value == null ? '' : String(value);
+            explicitInnerHtml = null;
+        },
+        get innerHTML() {
+            return explicitInnerHtml ?? escapeHtml(textContent);
+        },
+        set innerHTML(value) {
+            explicitInnerHtml = value == null ? '' : String(value);
+        },
+        get outerHTML() {
+            const attributes = [];
+            if (this.id) {
+                attributes.push(`id="${escapeHtml(this.id)}"`);
+            }
+            if (this.className) {
+                attributes.push(`class="${escapeHtml(this.className)}"`);
+            }
+
+            return `<${tagName}${attributes.length ? ` ${attributes.join(' ')}` : ''}>${this.innerHTML}</${tagName}>`;
+        },
+        appendChild(child) {
+            explicitInnerHtml = `${explicitInnerHtml ?? ''}${child?.outerHTML ?? ''}`;
+        }
+    };
+}
+
+function createFakeDocument(ids = []) {
+    const elements = Object.fromEntries(ids.map((id) => [id, createFakeElement(id)]));
+
+    return {
+        elements,
+        body: {
+            dataset: {}
+        },
+        createElement(tagName) {
+            return createFakeElement(null, tagName);
+        },
+        getElementById(id) {
+            return elements[id] || null;
+        }
+    };
+}
+
+afterEach(() => {
+    delete global.document;
+});
 
 describe('Notetaker move-scoped view state', () => {
     it('hydrates participant-scoped notes and filters move observations by team', () => {
@@ -226,5 +297,39 @@ describe('Notetaker move-scoped view state', () => {
             type: 'MOMENT',
             content: 'Turning point reached'
         })).toBe(true);
+    });
+
+    it('renders full facilitator action details in the read-only action view', () => {
+        const fakeDocument = createFakeDocument(['actionsListView']);
+        global.document = fakeDocument;
+
+        const controller = new NotetakerController();
+        controller.actions = [{
+            id: 'action-91',
+            goal: 'Lock in refinery access',
+            mechanism: 'Backchannel guarantees',
+            move: 2,
+            phase: 3,
+            status: 'adjudicated',
+            priority: 'URGENT',
+            expected_outcomes: 'Maintain fuel deliveries through the next move.',
+            ally_contingencies: 'Use regional lenders as guarantors.',
+            targets: ['Refinery Board'],
+            sector: 'Energy',
+            exposure_type: 'Covert',
+            submitted_at: '2026-04-08T11:15:00.000Z',
+            adjudication_notes: 'White Cell requires tighter sanctions mitigation.'
+        }];
+
+        controller.renderActionsView();
+
+        const markup = fakeDocument.elements.actionsListView.innerHTML;
+        expect(markup).toContain('Move 2 • Phase 3');
+        expect(markup).toContain('Targets:</strong> Refinery Board');
+        expect(markup).toContain('Sector:</strong> Energy');
+        expect(markup).toContain('Exposure:</strong> Covert');
+        expect(markup).toContain('Ally Contingencies:</strong> Use regional lenders as guarantors.');
+        expect(markup).toContain('Submitted:</strong>');
+        expect(markup).toContain('Adjudication Notes:</strong> White Cell requires tighter sanctions mitigation.');
     });
 });

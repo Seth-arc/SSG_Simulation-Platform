@@ -540,7 +540,7 @@ export class NotetakerController {
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-2);">
                     <div>
                         <h4 class="font-semibold">${this.escapeHtml(action.goal || action.title || 'Untitled action')}</h4>
-                        <p class="text-xs text-gray-500">${action.mechanism || 'No mechanism'} • Move ${action.move || 1}</p>
+                        <p class="text-xs text-gray-500">${this.escapeHtml(action.mechanism || 'No mechanism')} • Move ${action.move || 1} • Phase ${action.phase || 1}</p>
                     </div>
                     <div style="display: flex; gap: var(--space-2);">
                         ${createStatusBadge(action.status || 'draft').outerHTML}
@@ -555,8 +555,19 @@ export class NotetakerController {
                 ` : ''}
                 <p class="text-xs text-gray-500" style="margin-top: var(--space-2);">
                     <strong>Targets:</strong> ${this.escapeHtml((Array.isArray(action.targets) ? action.targets : (action.target ? [action.target] : [])).join(', ') || 'Not specified')} |
+                    <strong>Sector:</strong> ${this.escapeHtml(action.sector || 'Not specified')} |
                     <strong>Exposure:</strong> ${this.escapeHtml(action.exposure_type || 'Not specified')}
                 </p>
+                ${action.submitted_at ? `
+                    <p class="text-xs text-gray-500" style="margin-top: var(--space-2);">
+                        <strong>Submitted:</strong> ${this.escapeHtml(formatDateTime(action.submitted_at))}
+                    </p>
+                ` : ''}
+                ${action.adjudication_notes ? `
+                    <p class="text-xs text-gray-500" style="margin-top: var(--space-2);">
+                        <strong>Adjudication Notes:</strong> ${this.escapeHtml(action.adjudication_notes)}
+                    </p>
+                ` : ''}
             </div>
         `).join('');
     }

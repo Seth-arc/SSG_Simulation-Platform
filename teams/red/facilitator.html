@@ -219,8 +219,20 @@
                     </div>
 
                     <div class="section-body">
-                        <div id="responsesList" aria-live="polite">
-                            <!-- Responses will be populated here -->
+                        <div style="display: flex; flex-direction: column; gap: var(--space-4);">
+                            <div id="responsesList" aria-live="polite">
+                                <!-- Responses will be populated here -->
+                            </div>
+
+                            <section class="card card-bordered" style="padding: var(--space-4);" aria-labelledby="tribeStreetJournalHeading">
+                                <div style="margin-bottom: var(--space-3);">
+                                    <h3 id="tribeStreetJournalHeading" class="font-semibold">Tribe Street Journal</h3>
+                                    <p class="text-sm text-gray-500">Latest team notes, moments, and quotes captured during the exercise.</p>
+                                </div>
+                                <div id="tribeStreetJournalList" aria-live="polite">
+                                    <!-- Tribe Street Journal entries will be populated here -->
+                                </div>
+                            </section>
                         </div>
                     </div>
                 </section>

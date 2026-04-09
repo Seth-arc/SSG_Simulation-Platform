@@ -35,6 +35,38 @@ import { getRoleRoute, getTeamResponseTargets, resolveTeamContext } from '../cor
 import { navigateToApp } from '../core/navigation.js';
 
 const logger = createLogger('Facilitator');
+const TRIBE_STREET_JOURNAL_EVENT_TYPES = new Set(['NOTE', 'MOMENT', 'QUOTE']);
+const TRIBE_STREET_JOURNAL_LIMIT = 20;
+
+function getEventTimestamp(event = {}) {
+    return event?.created_at || event?.updated_at || event?.timestamp || null;
+}
+
+function getSortableEventTime(event = {}) {
+    const timestamp = getEventTimestamp(event);
+    if (!timestamp) {
+        return 0;
+    }
+
+    const parsedTime = new Date(timestamp).getTime();
+    return Number.isFinite(parsedTime) ? parsedTime : 0;
+}
+
+export function isTribeStreetJournalEntry(event = {}, teamId = null) {
+    const eventType = event?.type ?? event?.event_type ?? null;
+
+    return Boolean(teamId)
+        && event?.team === teamId
+        && TRIBE_STREET_JOURNAL_EVENT_TYPES.has(eventType)
+        && event?.metadata?.source !== 'notetaker_save';
+}
+
+export function buildTribeStreetJournalEntries(events = [], teamId = null) {
+    return [...(events || [])]
+        .filter((event) => isTribeStreetJournalEntry(event, teamId))
+        .sort((a, b) => getSortableEventTime(b) - getSortableEventTime(a))
+        .slice(0, TRIBE_STREET_JOURNAL_LIMIT);
+}
 
 export function getFacilitatorAccessState({
     role,
@@ -78,6 +110,7 @@ export class FacilitatorController {
         this.actions = [];
         this.rfis = [];
         this.responses = [];
+        this.journalEntries = [];
         this.timelineEvents = [];
         this.storeUnsubscribers = [];
         this.role = sessionStore.getRole();
@@ -201,8 +234,8 @@ export class FacilitatorController {
 
         if (responsesDescription) {
             responsesDescription.textContent = this.isReadOnly
-                ? 'Passive feed of White Cell responses to this team.'
-                : 'View responses to your RFIs and communications';
+                ? 'Passive feed of White Cell responses to this team, plus the latest Tribe Street Journal captures.'
+                : 'View responses to your RFIs and communications, plus the latest Tribe Street Journal captures.';
         }
 
         if (timelineDescription) {
@@ -356,10 +389,15 @@ export class FacilitatorController {
     }
 
     syncTimelineFromStore() {
-        this.timelineEvents = timelineStore.getAll()
+        const relevantEvents = timelineStore.getAll()
             .filter((event) => [this.teamId, 'white_cell'].includes(event.team))
             .slice(0, 50);
+
+        this.timelineEvents = relevantEvents;
+        this.journalEntries = buildTribeStreetJournalEntries(relevantEvents, this.teamId);
+
         this.renderTimeline();
+        this.renderTribeStreetJournalList();
     }
 
     renderActionsList() {
@@ -1055,6 +1093,46 @@ export class FacilitatorController {
                         ${responseBadge}
                     </div>
                     <p class="text-sm">${this.escapeHtml(response.content || '')}</p>
+                </div>
+            `;
+        }).join('');
+    }
+
+    renderTribeStreetJournalList() {
+        const container = document.getElementById('tribeStreetJournalList');
+        if (!container) return;
+
+        if (this.journalEntries.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <h3 class="empty-state-title">No Journal Entries Yet</h3>
+                    <p class="empty-state-message">Team notes, moments, and quotes captured during the exercise will appear here.</p>
+                </div>
+            `;
+            return;
+        }
+
+        container.innerHTML = this.journalEntries.map((entry) => {
+            const eventType = entry.type || entry.event_type || 'NOTE';
+            const badgeVariant = {
+                NOTE: 'default',
+                MOMENT: 'warning',
+                QUOTE: 'info'
+            }[eventType] || 'default';
+            const actorLabel = entry.metadata?.actor || this.teamContext.facilitatorLabel;
+            const timestamp = getEventTimestamp(entry);
+
+            return `
+                <div class="card card-bordered" style="padding: var(--space-3); margin-bottom: var(--space-3);">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2);">
+                        <div style="display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;">
+                            ${createBadge({ text: eventType, variant: badgeVariant, size: 'sm', rounded: true }).outerHTML}
+                            <span class="text-xs text-gray-500">${this.escapeHtml(actorLabel)}</span>
+                        </div>
+                        <span class="text-xs text-gray-400">${timestamp ? formatDateTime(timestamp) : 'Time unavailable'}</span>
+                    </div>
+                    <p class="text-sm">${this.escapeHtml(entry.content || entry.description || '')}</p>
+                    <p class="text-xs text-gray-400" style="margin-top: var(--space-2);">Move ${entry.move || 1} | Phase ${entry.phase || 1}</p>
                 </div>
             `;
         }).join('');

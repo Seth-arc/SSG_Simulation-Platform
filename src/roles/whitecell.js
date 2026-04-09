@@ -1065,6 +1065,13 @@ export class WhiteCellController {
             : (action.target ? [action.target] : []);
         const expectedOutcomes = action.expected_outcomes || action.description || '';
         const targetLabel = targets.length ? targets.join(', ') : 'Not specified';
+        const submittedMarkup = action.submitted_at
+            ? `
+                <p class="text-xs text-gray-500" style="margin-top: var(--space-2);">
+                    <strong>Submitted:</strong> ${this.escapeHtml(formatDateTime(action.submitted_at))}
+                </p>
+            `
+            : '';
         const outcomeMarkup = includeOutcome && action.outcome
             ? `<p class="text-xs text-gray-500" style="margin-top: var(--space-2);"><strong>Outcome:</strong> ${this.escapeHtml(action.outcome)}</p>`
             : '';
@@ -1080,7 +1087,7 @@ export class WhiteCellController {
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: var(--space-3);">
                     <div>
                         <h3 class="font-semibold">${this.escapeHtml(action.goal || action.title || 'Untitled action')}</h3>
-                        <p class="text-xs text-gray-500">${this.escapeHtml(action.mechanism || 'No mechanism')} | ${this.escapeHtml(this.formatTeamLabel(action.team))} | Move ${action.move || 1}</p>
+                        <p class="text-xs text-gray-500">${this.escapeHtml(action.mechanism || 'No mechanism')} | ${this.escapeHtml(this.formatTeamLabel(action.team))} | Move ${action.move || 1} | Phase ${action.phase || 1}</p>
                     </div>
                     <div style="display: flex; gap: var(--space-2);">
                         ${createStatusBadge(status).outerHTML}
@@ -1095,8 +1102,10 @@ export class WhiteCellController {
                 ` : ''}
                 <p class="text-xs text-gray-500">
                     <strong>Targets:</strong> ${this.escapeHtml(targetLabel)} |
+                    <strong>Sector:</strong> ${this.escapeHtml(action.sector || 'Not specified')} |
                     <strong>Exposure:</strong> ${this.escapeHtml(action.exposure_type || 'Not specified')}
                 </p>
+                ${submittedMarkup}
                 ${outcomeMarkup}
                 ${notesMarkup}
                 ${actionButtonMarkup ? `
@@ -1138,11 +1147,17 @@ export class WhiteCellController {
         content.innerHTML = `
             <div class="mb-4">
                 <h4 class="font-semibold">${this.escapeHtml(action.goal || action.title || 'Untitled action')}</h4>
-                <p class="text-sm text-gray-500">${this.escapeHtml(action.mechanism || 'No mechanism')} | ${this.escapeHtml(this.formatTeamLabel(action.team))}</p>
+                <p class="text-sm text-gray-500">${this.escapeHtml(action.mechanism || 'No mechanism')} | ${this.escapeHtml(this.formatTeamLabel(action.team))} | Move ${action.move || 1} | Phase ${action.phase || 1}</p>
                 <p class="text-xs text-gray-500" style="margin-top: var(--space-2);">
                     <strong>Targets:</strong> ${this.escapeHtml((Array.isArray(action.targets) ? action.targets : (action.target ? [action.target] : [])).join(', ') || 'Not specified')} |
+                    <strong>Sector:</strong> ${this.escapeHtml(action.sector || 'Not specified')} |
                     <strong>Exposure:</strong> ${this.escapeHtml(action.exposure_type || 'Not specified')}
                 </p>
+                ${action.submitted_at ? `
+                    <p class="text-xs text-gray-500" style="margin-top: var(--space-2);">
+                        <strong>Submitted:</strong> ${this.escapeHtml(formatDateTime(action.submitted_at))}
+                    </p>
+                ` : ''}
                 ${action.ally_contingencies ? `
                     <p class="text-xs text-gray-500" style="margin-top: var(--space-2);">
                         <strong>Ally Contingencies:</strong> ${this.escapeHtml(action.ally_contingencies)}

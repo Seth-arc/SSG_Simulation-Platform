@@ -3,17 +3,29 @@ import { readFileSync } from 'node:fs';
 
 const WHITECELL_HTML_PATH = new URL('../../teams/blue/whitecell.html', import.meta.url);
 
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function extractIdsFromHtml(html) {
     return new Set(
         [...html.matchAll(/id="([^"]+)"/g)].map((match) => match[1])
     );
 }
 
-function createFakeElement(id) {
+function createFakeElement(id = null, tagName = 'div') {
+    let textContent = '';
+    let explicitInnerHtml = null;
+
     return {
         id,
+        tagName: tagName.toUpperCase(),
         value: '',
-        textContent: '',
         listeners: {},
         classList: {
             add() {},
@@ -22,6 +34,33 @@ function createFakeElement(id) {
         },
         addEventListener(type, callback) {
             this.listeners[type] = callback;
+        },
+        get textContent() {
+            return textContent;
+        },
+        set textContent(value) {
+            textContent = value == null ? '' : String(value);
+            explicitInnerHtml = null;
+        },
+        get innerHTML() {
+            return explicitInnerHtml ?? escapeHtml(textContent);
+        },
+        set innerHTML(value) {
+            explicitInnerHtml = value == null ? '' : String(value);
+        },
+        get outerHTML() {
+            const attributes = [];
+            if (this.id) {
+                attributes.push(`id="${escapeHtml(this.id)}"`);
+            }
+            if (this.className) {
+                attributes.push(`class="${escapeHtml(this.className)}"`);
+            }
+
+            return `<${tagName}${attributes.length ? ` ${attributes.join(' ')}` : ''}>${this.innerHTML}</${tagName}>`;
+        },
+        appendChild(child) {
+            explicitInnerHtml = `${explicitInnerHtml ?? ''}${child?.outerHTML ?? ''}`;
         }
     };
 }
@@ -31,6 +70,9 @@ function createFakeDocument(ids = []) {
 
     return {
         elements,
+        createElement(tagName) {
+            return createFakeElement(null, tagName);
+        },
         getElementById(id) {
             return elements[id] || null;
         }
@@ -308,5 +350,38 @@ describe('White Cell DOM contract', () => {
             { value: 'notetaker', label: 'Notetakers' },
             { value: 'whitecell', label: 'White Cell' }
         ]));
+    });
+
+    it('renders facilitator action details needed for White Cell adjudication', async () => {
+        const { WhiteCellController } = await loadWhiteCellModule();
+        global.document = createFakeDocument();
+
+        const controller = new WhiteCellController();
+        const markup = controller.renderActionCard({
+            id: 'action-77',
+            goal: 'Stabilize port access',
+            mechanism: 'Diplomatic pressure',
+            team: 'blue',
+            move: 2,
+            phase: 3,
+            status: 'submitted',
+            priority: 'HIGH',
+            targets: ['Port Authority'],
+            sector: 'Logistics',
+            exposure_type: 'Overt',
+            expected_outcomes: 'Secure a 72-hour shipping corridor.',
+            ally_contingencies: 'Coordinate with customs union partners.',
+            submitted_at: '2026-04-08T10:00:00.000Z'
+        }, {
+            showAdjudicateAction: true,
+            includeOutcome: false
+        });
+
+        expect(markup).toContain('Move 2 | Phase 3');
+        expect(markup).toContain('Targets:</strong> Port Authority');
+        expect(markup).toContain('Sector:</strong> Logistics');
+        expect(markup).toContain('Exposure:</strong> Overt');
+        expect(markup).toContain('Ally Contingencies:</strong> Coordinate with customs union partners.');
+        expect(markup).toContain('Submitted:</strong>');
     });
 });

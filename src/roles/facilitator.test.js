@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+const FACILITATOR_HTML_PATH = new URL('../../teams/blue/facilitator.html', import.meta.url);
 
 const showToast = vi.fn();
 const showModal = vi.fn();
@@ -109,5 +112,62 @@ describe('Facilitator observer enforcement', () => {
             message: 'Observer mode is read-only on the facilitator page.',
             type: 'error'
         });
+    });
+
+    it('ships a Tribe Street Journal panel in the facilitator responses view', () => {
+        const html = readFileSync(FACILITATOR_HTML_PATH, 'utf8');
+
+        expect(html).toContain('Tribe Street Journal');
+        expect(html).toContain('id="tribeStreetJournalList"');
+    });
+
+    it('builds Tribe Street Journal entries from team capture events only', async () => {
+        const { buildTribeStreetJournalEntries } = await loadFacilitatorModule();
+
+        const entries = buildTribeStreetJournalEntries([
+            {
+                id: 'blue-note',
+                team: 'blue',
+                type: 'NOTE',
+                content: 'Blue team observation',
+                created_at: '2026-04-09T10:05:00.000Z'
+            },
+            {
+                id: 'blue-quote',
+                team: 'blue',
+                type: 'QUOTE',
+                content: 'Quoted minister',
+                created_at: '2026-04-09T10:06:00.000Z'
+            },
+            {
+                id: 'blue-save-event',
+                team: 'blue',
+                type: 'NOTE',
+                content: 'Saved notetaker note',
+                created_at: '2026-04-09T10:07:00.000Z',
+                metadata: {
+                    source: 'notetaker_save'
+                }
+            },
+            {
+                id: 'white-cell-note',
+                team: 'white_cell',
+                type: 'NOTE',
+                content: 'White Cell note',
+                created_at: '2026-04-09T10:08:00.000Z'
+            },
+            {
+                id: 'blue-action',
+                team: 'blue',
+                type: 'ACTION_CREATED',
+                content: 'Action created',
+                created_at: '2026-04-09T10:09:00.000Z'
+            }
+        ], 'blue');
+
+        expect(entries.map((entry) => entry.id)).toEqual([
+            'blue-quote',
+            'blue-note'
+        ]);
     });
 });
