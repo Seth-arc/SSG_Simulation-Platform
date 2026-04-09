@@ -73,6 +73,178 @@ function writeMockState(state) {
     storage.setItem(E2E_MOCK_STATE_KEY, JSON.stringify(state));
 }
 
+function normalizeMockState(parsedState = null) {
+    return {
+        counters: {
+            ...buildInitialMockState().counters,
+            ...(parsedState?.counters || {})
+        },
+        tables: {
+            ...buildInitialMockState().tables,
+            ...(parsedState?.tables || {})
+        }
+    };
+}
+
+function parseMockStateSnapshot(rawState) {
+    if (!rawState) {
+        return buildInitialMockState();
+    }
+
+    try {
+        return normalizeMockState(JSON.parse(rawState));
+    } catch (_error) {
+        return buildInitialMockState();
+    }
+}
+
+function diffMockTableRows(previousRows = [], nextRows = []) {
+    const previousMap = new Map(previousRows.map((row) => [row?.id, row]));
+    const nextMap = new Map(nextRows.map((row) => [row?.id, row]));
+    const changes = [];
+
+    nextMap.forEach((nextRow, rowId) => {
+        if (!previousMap.has(rowId)) {
+            changes.push({
+                eventType: 'INSERT',
+                old: null,
+                new: cloneValue(nextRow)
+            });
+            return;
+        }
+
+        const previousRow = previousMap.get(rowId);
+        if (!compareValues(previousRow, nextRow)) {
+            changes.push({
+                eventType: 'UPDATE',
+                old: cloneValue(previousRow),
+                new: cloneValue(nextRow)
+            });
+        }
+    });
+
+    previousMap.forEach((previousRow, rowId) => {
+        if (!nextMap.has(rowId)) {
+            changes.push({
+                eventType: 'DELETE',
+                old: cloneValue(previousRow),
+                new: null
+            });
+        }
+    });
+
+    return changes;
+}
+
+function parseRealtimeFilterExpression(filterExpression = '') {
+    const match = String(filterExpression || '').match(/^([a-z0-9_]+)=eq\.(.+)$/i);
+    if (!match) {
+        return null;
+    }
+
+    return {
+        field: match[1],
+        value: match[2]
+    };
+}
+
+function matchesRealtimeFilter(change, config = {}) {
+    const parsedFilter = parseRealtimeFilterExpression(config.filter);
+    if (!parsedFilter) {
+        return true;
+    }
+
+    const candidateRow = change.new || change.old || null;
+    return String(candidateRow?.[parsedFilter.field] ?? '') === parsedFilter.value;
+}
+
+function createMockRealtimeChannel() {
+    const subscriptions = [];
+    const statusCallbacks = new Set();
+    let storageListener = null;
+
+    const channel = {
+        on(eventName, config, callback) {
+            subscriptions.push({ eventName, config, callback });
+            return channel;
+        },
+        subscribe(callback) {
+            if (typeof callback === 'function') {
+                statusCallbacks.add(callback);
+                queueMicrotask(() => callback('SUBSCRIBED'));
+            }
+
+            if (!storageListener && typeof window !== 'undefined') {
+                storageListener = (event) => {
+                    if (event.key !== E2E_MOCK_STATE_KEY) {
+                        return;
+                    }
+
+                    const previousState = parseMockStateSnapshot(event.oldValue);
+                    const nextState = parseMockStateSnapshot(event.newValue);
+                    const subscribedTables = [...new Set(subscriptions.map((entry) => entry.config?.table).filter(Boolean))];
+
+                    subscribedTables.forEach((tableName) => {
+                        const changes = diffMockTableRows(
+                            previousState.tables?.[tableName] || [],
+                            nextState.tables?.[tableName] || []
+                        );
+
+                        changes.forEach((change) => {
+                            subscriptions.forEach((subscription) => {
+                                if (subscription.eventName !== 'postgres_changes') {
+                                    return;
+                                }
+
+                                if (subscription.config?.schema && subscription.config.schema !== 'public') {
+                                    return;
+                                }
+
+                                if (subscription.config?.table !== tableName) {
+                                    return;
+                                }
+
+                                if (
+                                    subscription.config?.event
+                                    && subscription.config.event !== '*'
+                                    && subscription.config.event !== change.eventType
+                                ) {
+                                    return;
+                                }
+
+                                if (!matchesRealtimeFilter(change, subscription.config)) {
+                                    return;
+                                }
+
+                                subscription.callback({
+                                    eventType: change.eventType,
+                                    old: cloneValue(change.old),
+                                    new: cloneValue(change.new)
+                                });
+                            });
+                        });
+                    });
+                };
+
+                window.addEventListener('storage', storageListener);
+            }
+
+            return channel;
+        },
+        unsubscribe() {
+            if (storageListener && typeof window !== 'undefined') {
+                window.removeEventListener('storage', storageListener);
+                storageListener = null;
+            }
+
+            statusCallbacks.forEach((callback) => callback('CLOSED'));
+            statusCallbacks.clear();
+        }
+    };
+
+    return channel;
+}
+
 function readMockAuthSession() {
     const storage = getStorage();
     if (!storage) {
@@ -281,9 +453,14 @@ function shapeSelectedRows(tableName, rows, selectClause, state) {
 }
 
 function normalizeSeatRole(role = '') {
-    return /^(blue|red|green)_whitecell$/.test(role)
-        ? role.replace(/_whitecell$/, '_whitecell_lead')
-        : role;
+    const normalizedRole = String(role || '').trim();
+    const match = normalizedRole.match(/^(?:(blue|red|green)_)?whitecell(?:_(lead|support))?$/);
+
+    if (!match) {
+        return normalizedRole;
+    }
+
+    return `whitecell_${match[2] || 'lead'}`;
 }
 
 function getSessionRoleSeatLimit(role = '') {
@@ -298,10 +475,10 @@ function getSessionRoleSeatLimit(role = '') {
     if (normalizedRole === 'viewer') {
         return 5;
     }
-    if (/^(blue|red|green)_whitecell(_lead)?$/.test(normalizedRole)) {
+    if (/^whitecell(_lead)?$/.test(normalizedRole)) {
         return 1;
     }
-    if (/^(blue|red|green)_whitecell_support$/.test(normalizedRole)) {
+    if (/^whitecell_support$/.test(normalizedRole)) {
         return 1;
     }
 
@@ -369,7 +546,7 @@ function getLiveDemoParticipantSurface(state, authUserId, sessionId) {
         return 'notetaker';
     }
 
-    if (/^(blue|red|green)_whitecell(_lead|_support)?$/.test(role || '')) {
+    if (/^whitecell(_lead|_support)?$/.test(role || '')) {
         return 'whitecell';
     }
 
@@ -554,7 +731,7 @@ function authorizeDemoOperator(state, {
     const authUserId = getCurrentAuthUserId();
     const normalizedSurface = String(requested_surface || '').trim().toLowerCase();
     const normalizedRole = normalizeSeatRole(String(requested_role || '').trim()) || null;
-    const normalizedTeam = String(requested_team_id || '').trim().toLowerCase() || null;
+    let normalizedTeam = String(requested_team_id || '').trim().toLowerCase() || null;
 
     if (!authUserId) {
         return { data: null, error: { message: 'Browser identity is required before operator authorization.' } };
@@ -576,6 +753,12 @@ function authorizeDemoOperator(state, {
         if (!session) {
             return { data: null, error: { message: 'This session is not currently joinable.' } };
         }
+
+        if (!['whitecell_lead', 'whitecell_support'].includes(normalizedRole)) {
+            return { data: null, error: { message: 'White Cell authorization requires a supported operator role.' } };
+        }
+
+        normalizedTeam = null;
     }
 
     state.tables.operator_grants = state.tables.operator_grants.filter((entry) => !(
@@ -715,7 +898,6 @@ function claimSessionRoleSeat(state, {
     const normalizedName = String(requested_name || '').trim() || null;
     const normalizedClientId = String(requested_client_id || '').trim();
     const roleLimit = getSessionRoleSeatLimit(normalizedRole);
-    const requestedTeam = normalizedRole.match(/^(blue|red|green)_/)?.[1] || null;
 
     if (!authUserId) {
         return { data: null, error: { message: 'Browser identity is required.' } };
@@ -732,11 +914,10 @@ function claimSessionRoleSeat(state, {
     if (!roleLimit) {
         return { data: null, error: { message: 'This role cannot be claimed in the live demo.' } };
     }
-    if (/^(blue|red|green)_whitecell(_lead|_support)?$/.test(normalizedRole)) {
+    if (/^whitecell(_lead|_support)?$/.test(normalizedRole)) {
         const grant = getOperatorGrant(state, authUserId, 'whitecell');
         if (!grant
             || grant.session_id !== requested_session_id
-            || grant.team_id !== requestedTeam
             || grant.role !== normalizedRole) {
             return { data: null, error: { message: 'White Cell seats require operator authorization.' } };
         }
@@ -1367,15 +1548,11 @@ export function createE2EMockSupabaseClient() {
             return new MockQueryBuilder(tableName);
         },
         channel() {
-            return {
-                on() {
-                    return this;
-                },
-                subscribe() {
-                    return this;
-                },
-                unsubscribe() {}
-            };
+            return createMockRealtimeChannel();
+        },
+        async removeChannel(channel) {
+            channel?.unsubscribe?.();
+            return 'ok';
         },
         rpc: async (functionName, params = {}) => {
             if (functionName === 'lookup_joinable_session_by_code') {

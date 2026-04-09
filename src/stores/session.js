@@ -114,14 +114,19 @@ function normalizeOperatorAuth(auth) {
         return uppercase ? normalizedValue.toUpperCase() : normalizedValue;
     };
 
+    const normalizedRole = normalizeWhiteCellOperatorRole(normalizeString(auth.role) || '');
+    const normalizedTeamId = normalizeString(auth.teamId ?? auth.team_id);
+
     return {
         surfaces,
         grantId: normalizeString(auth.grantId ?? auth.id),
         operatorName: normalizeString(auth.operatorName ?? auth.operator_name),
         sessionId: normalizeString(auth.sessionId ?? auth.session_id),
         sessionCode: normalizeString(auth.sessionCode ?? auth.session_code, { uppercase: true }),
-        teamId: normalizeString(auth.teamId ?? auth.team_id),
-        role: normalizeWhiteCellOperatorRole(normalizeString(auth.role) || ''),
+        teamId: typeof normalizedRole === 'string' && normalizedRole.startsWith('whitecell_')
+            ? null
+            : normalizedTeamId,
+        role: normalizedRole,
         grantedAt: normalizeString(auth.grantedAt ?? auth.granted_at) || new Date().toISOString(),
         verifiedAt: normalizeString(auth.verifiedAt) || new Date().toISOString()
     };
@@ -492,12 +497,13 @@ export const sessionStore = {
             return false;
         }
 
-        if (role && auth.role !== role) {
+        const normalizedRequestedRole = normalizeWhiteCellOperatorRole(role);
+        if (role && auth.role !== normalizedRequestedRole) {
             return false;
         }
 
         if (surface === OPERATOR_SURFACES.WHITE_CELL) {
-            if (!auth.sessionId || !auth.teamId || !auth.role) {
+            if (!auth.sessionId || !auth.role) {
                 return false;
             }
 
@@ -505,7 +511,7 @@ export const sessionStore = {
                 return false;
             }
 
-            if (teamId && auth.teamId !== teamId) {
+            if (teamId && auth.teamId && auth.teamId !== teamId) {
                 return false;
             }
         }

@@ -104,20 +104,20 @@ describe('White Cell DOM contract', () => {
         const { getWhiteCellAccessState } = await loadWhiteCellModule();
         const teamContext = {
             teamId: 'blue',
-            whitecellLeadRole: 'blue_whitecell_lead',
-            whitecellSupportRole: 'blue_whitecell_support'
+            whitecellLeadRole: 'whitecell_lead',
+            whitecellSupportRole: 'whitecell_support'
         };
 
         expect(getWhiteCellAccessState(teamContext, {
             getSessionId: () => 'session-1',
-            getSessionData: () => ({ role: 'blue_whitecell_lead' }),
-            getRole: () => 'blue_whitecell_lead',
+            getSessionData: () => ({ role: 'whitecell_lead' }),
+            getRole: () => 'whitecell_lead',
             hasOperatorAccess: () => false
         })).toMatchObject({
             allowed: true,
             cachedOperatorAccess: false,
             sessionId: 'session-1',
-            role: 'blue_whitecell_lead',
+            role: 'whitecell_lead',
             operatorRole: 'lead'
         });
 
@@ -125,21 +125,20 @@ describe('White Cell DOM contract', () => {
 
         expect(getWhiteCellAccessState(teamContext, {
             getSessionId: () => 'session-1',
-            getSessionData: () => ({ role: 'blue_whitecell_support' }),
-            getRole: () => 'blue_whitecell_support',
+            getSessionData: () => ({ role: 'whitecell_support' }),
+            getRole: () => 'whitecell_support',
             hasOperatorAccess
         })).toMatchObject({
             allowed: true,
             cachedOperatorAccess: true,
             sessionId: 'session-1',
-            role: 'blue_whitecell_support',
+            role: 'whitecell_support',
             operatorRole: 'support'
         });
 
         expect(hasOperatorAccess).toHaveBeenCalledWith('whitecell', {
             sessionId: 'session-1',
-            teamId: 'blue',
-            role: 'blue_whitecell_support'
+            role: 'whitecell_support'
         });
     });
 
@@ -170,7 +169,7 @@ describe('White Cell DOM contract', () => {
             },
             {
                 id: 'blue-whitecell',
-                role: 'blue_whitecell_support',
+                role: 'whitecell_support',
                 display_name: 'Morgan',
                 is_active: true,
                 heartbeat_at: '2026-04-08T10:04:00.000Z'
@@ -221,7 +220,7 @@ describe('White Cell DOM contract', () => {
         const { teamOptions, roleOptions } = buildWhiteCellParticipantFilterOptions([
             { id: 'blue-facilitator', role: 'blue_facilitator' },
             { id: 'green-notetaker', role: 'green_notetaker' },
-            { id: 'whitecell-seat', role: 'red_whitecell_support' },
+            { id: 'whitecell-seat', role: 'whitecell_support' },
             { id: 'observer-1', role: 'viewer' }
         ]);
 
@@ -229,7 +228,7 @@ describe('White Cell DOM contract', () => {
             { value: '', label: 'All Teams' },
             { value: 'blue', label: 'Blue Team' },
             { value: 'green', label: 'Green Team' },
-            { value: 'red', label: 'Red Team' },
+            { value: 'white_cell', label: 'White Cell' },
             { value: 'observer', label: 'Observers' }
         ]));
         expect(roleOptions).toEqual(expect.arrayContaining([
@@ -252,7 +251,7 @@ describe('White Cell DOM contract', () => {
         const roster = buildWhiteCellParticipantRoster([
             { id: 'blue-facilitator', role: 'blue_facilitator', is_active: true },
             { id: 'green-notetaker', role: 'green_notetaker', is_active: true },
-            { id: 'red-whitecell', role: 'red_whitecell_support', is_active: true },
+            { id: 'red-whitecell', role: 'whitecell_support', is_active: true },
             { id: 'observer-1', role: 'viewer', is_active: false }
         ]);
 
@@ -284,7 +283,7 @@ describe('White Cell DOM contract', () => {
                 id: 'timeline-whitecell',
                 team: 'white_cell',
                 type: 'GUIDANCE',
-                metadata: { role: 'red_whitecell_support' }
+                metadata: { role: 'whitecell_support' }
             }
         ];
 

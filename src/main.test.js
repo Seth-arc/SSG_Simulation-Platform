@@ -112,9 +112,9 @@ describe('main reload reauthentication guard', () => {
         expect(shouldRequireFreshParticipantLoginOnReload({
             snapshot: {
                 sessionId: 'session-1',
-                role: 'blue_whitecell_lead',
+                role: 'whitecell_lead',
                 sessionData: {
-                    role: 'blue_whitecell_lead',
+                    role: 'whitecell_lead',
                     roleSurface: 'whitecell'
                 }
             },

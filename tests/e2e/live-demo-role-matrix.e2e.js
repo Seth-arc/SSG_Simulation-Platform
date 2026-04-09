@@ -49,31 +49,32 @@ const LIVE_DEMO_ROLE_MATRIX = TEAM_OPTIONS.flatMap((team) => ([
         displayName: `${team.shortLabel} Observer Matrix`,
         teamId: team.id,
         roleSurface: ROLE_SURFACES.VIEWER
-    },
+    }
+])).concat([
     {
-        actorName: `${team.id}-whitecell-lead-matrix`,
-        displayName: `${team.shortLabel} White Cell Lead Matrix`,
-        teamId: team.id,
+        actorName: 'whitecell-lead-matrix',
+        displayName: 'White Cell Lead Matrix',
+        teamId: null,
         roleSurface: ROLE_SURFACES.WHITECELL,
         operatorRole: WHITE_CELL_OPERATOR_ROLES.LEAD
     },
     {
-        actorName: `${team.id}-whitecell-support-matrix`,
-        displayName: `${team.shortLabel} White Cell Support Matrix`,
-        teamId: team.id,
+        actorName: 'whitecell-support-matrix',
+        displayName: 'White Cell Support Matrix',
+        teamId: null,
         roleSurface: ROLE_SURFACES.WHITECELL,
         operatorRole: WHITE_CELL_OPERATOR_ROLES.SUPPORT
     }
-]));
+]);
 
 function buildExpectedSeatCounts() {
     return TEAM_OPTIONS.reduce((counts, team) => ({
         ...counts,
         [`${team.id}_facilitator`]: 1,
-        [`${team.id}_notetaker`]: 1,
-        [`${team.id}_whitecell_lead`]: 1,
-        [`${team.id}_whitecell_support`]: 1
+        [`${team.id}_notetaker`]: 1
     }), {
+        whitecell_lead: 1,
+        whitecell_support: 1,
         viewer: TEAM_OPTIONS.length
     });
 }
@@ -107,8 +108,7 @@ async function expectRoleSurface(page, roleCase) {
         return;
     }
 
-    await expect(page).toHaveURL(new RegExp(`/teams/${roleCase.teamId}/whitecell\\.html(?:\\?.*)?$`));
-    await expect(page.locator('body')).toHaveAttribute('data-team', roleCase.teamId);
+    await expect(page).toHaveURL(/\/teams\/blue\/whitecell\.html(?:\?.*)?$/);
     await expect(page.locator('#startTimerBtn')).toBeVisible();
 
     if (roleCase.operatorRole === WHITE_CELL_OPERATOR_ROLES.SUPPORT) {
@@ -146,7 +146,6 @@ test('@live-demo browser role matrix covers all teams and roles through join, pu
                 await authorizeWhiteCell(actorPage, {
                     sessionCode: SESSION_CODE,
                     displayName: roleCase.displayName,
-                    team: roleCase.teamId,
                     operatorRole: roleCase.operatorRole
                 });
             } else {

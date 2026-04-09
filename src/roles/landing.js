@@ -405,7 +405,7 @@ export class LandingController {
         const codeInput = document.getElementById('sessionCode');
         const sessionCode = codeInput?.value?.trim().toUpperCase();
         const operatorName = document.getElementById('displayName')?.value?.trim()
-            || getRoleDisplayName(buildWhiteCellOperatorRole(this.selectedTeam, operatorRole));
+            || getRoleDisplayName(buildWhiteCellOperatorRole(operatorRole));
 
         const codeError = validateSessionCode(sessionCode);
         if (codeError) {
@@ -417,12 +417,11 @@ export class LandingController {
         await this.prewarmBrowserIdentity({ interactive: true });
         const session = await this.findSessionByCode(sessionCode);
         const sessionCodeFromLookup = session.session_code || sessionCode;
-        const whiteCellRole = buildWhiteCellOperatorRole(this.selectedTeam, operatorRole);
+        const whiteCellRole = buildWhiteCellOperatorRole(operatorRole);
         const grant = await database.authorizeOperatorAccess({
             surface: OPERATOR_SURFACES.WHITE_CELL,
             accessCode: operatorCode,
             sessionId: session.id,
-            teamId: this.selectedTeam,
             role: whiteCellRole,
             operatorName
         });
@@ -440,7 +439,7 @@ export class LandingController {
             participantSessionId: participant.id,
             role: whiteCellRole,
             displayName: operatorName,
-            team: this.selectedTeam,
+            team: 'white_cell',
             roleSurface: ROLE_SURFACES.WHITECELL,
             operatorMode: true,
             seatClaimStatus: participant.claim_status || 'claimed'
@@ -449,7 +448,7 @@ export class LandingController {
             ...grant,
             sessionId: grant?.sessionId || session.id,
             sessionCode: sessionCodeFromLookup,
-            teamId: grant?.teamId || this.selectedTeam,
+            teamId: grant?.teamId || null,
             role: grant?.role || whiteCellRole,
             operatorName: grant?.operatorName || operatorName
         });

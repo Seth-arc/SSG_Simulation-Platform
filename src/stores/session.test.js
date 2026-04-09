@@ -165,8 +165,8 @@ describe('sessionStore snapshot model', () => {
             timer_seconds: 5400,
             timer_running: true
         });
-        expect(latestSnapshot.role).toBe('blue_whitecell_lead');
-        expect(latestSnapshot.sessionData.role).toBe('blue_whitecell_lead');
+        expect(latestSnapshot.role).toBe('whitecell_lead');
+        expect(latestSnapshot.sessionData.role).toBe('whitecell_lead');
     });
 
     it('rehydrates cached session data on a fresh module load', async () => {
@@ -250,13 +250,13 @@ describe('sessionStore snapshot model', () => {
         expect(module.sessionStore.hasOperatorAccess('whitecell', {
             sessionId: 'session-operator',
             teamId: 'blue',
-            role: 'blue_whitecell_lead'
+            role: 'whitecell_lead'
         })).toBe(true);
         expect(module.sessionStore.hasOperatorAccess('whitecell', {
             sessionId: 'session-operator',
             teamId: 'red',
-            role: 'blue_whitecell_lead'
-        })).toBe(false);
+            role: 'whitecell_lead'
+        })).toBe(true);
         expect(module.sessionStore.hasOperatorAccess('gamemaster', {
             role: 'white'
         })).toBe(false);
@@ -267,8 +267,8 @@ describe('sessionStore snapshot model', () => {
             surfaces: ['whitecell'],
             sessionId: 'session-operator',
             sessionCode: 'ALPHA-2026',
-            teamId: 'blue',
-            role: 'blue_whitecell_lead',
+            teamId: null,
+            role: 'whitecell_lead',
             operatorName: 'White Cell Lead'
         });
     });

@@ -119,7 +119,6 @@ export function getWhiteCellAccessState(teamContext, sessionStoreRef = sessionSt
         allowedRole &&
         sessionStoreRef.hasOperatorAccess?.(OPERATOR_SURFACES.WHITE_CELL, {
             sessionId,
-            teamId: teamContext.teamId,
             role
         })
     );
@@ -160,7 +159,10 @@ export function isWhiteCellVisibleParticipant(participant = {}, teamId = null) {
     }
 
     const parsedRole = parseTeamRole(participant.role);
-    const participantTeam = participant.team || participant.team_id || parsedRole.teamId || null;
+    const participantTeam = participant.team
+        || participant.team_id
+        || (parsedRole.surface === ROLE_SURFACES.WHITECELL ? 'white_cell' : parsedRole.teamId)
+        || null;
 
     if (!teamId) {
         return participant.role === 'viewer' || Boolean(parsedRole.surface);
@@ -291,6 +293,10 @@ export function getWhiteCellParticipantTeamFilterValue(participant = {}) {
     }
 
     const parsedRole = parseTeamRole(participant.role);
+    if (parsedRole.surface === ROLE_SURFACES.WHITECELL) {
+        return 'white_cell';
+    }
+
     return participant.team || participant.team_id || parsedRole.teamId || null;
 }
 
@@ -472,7 +478,7 @@ export class WhiteCellController {
             role: null
         };
         this.teamContext = resolveTeamContext();
-        this.teamId = this.teamContext.teamId;
+        this.teamId = null;
         this.operatorRole = WHITE_CELL_OPERATOR_ROLES.LEAD;
     }
 
@@ -492,13 +498,12 @@ export class WhiteCellController {
         try {
             const grant = await database.requireOperatorGrant(OPERATOR_SURFACES.WHITE_CELL, {
                 sessionId: accessState.sessionId,
-                teamId: this.teamId,
                 role: accessState.role
             });
             sessionStore.setOperatorAuth({
                 ...grant,
                 sessionId: grant?.sessionId || accessState.sessionId,
-                teamId: grant?.teamId || this.teamId,
+                teamId: grant?.teamId || null,
                 role: grant?.role || accessState.role
             });
         } catch (error) {

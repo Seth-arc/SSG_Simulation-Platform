@@ -74,22 +74,22 @@ const ALL_TEAM_ROLE_CASES = [
             role: buildTeamRole(team.id, ROLE_SURFACES.NOTETAKER),
             teamId: team.id,
             requiresWhiteCellGrant: false
-        },
-        {
-            label: `${team.id} whitecell lead`,
-            role: buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.LEAD),
-            teamId: team.id,
-            requiresWhiteCellGrant: true,
-            retainsProtectedSessionAccess: true
-        },
-        {
-            label: `${team.id} whitecell support`,
-            role: buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.SUPPORT),
-            teamId: team.id,
-            requiresWhiteCellGrant: true,
-            retainsProtectedSessionAccess: true
         }
     ])),
+    {
+        label: 'whitecell lead',
+        role: buildWhiteCellOperatorRole(WHITE_CELL_OPERATOR_ROLES.LEAD),
+        teamId: null,
+        requiresWhiteCellGrant: true,
+        retainsProtectedSessionAccess: true
+    },
+    {
+        label: 'whitecell support',
+        role: buildWhiteCellOperatorRole(WHITE_CELL_OPERATOR_ROLES.SUPPORT),
+        teamId: null,
+        requiresWhiteCellGrant: true,
+        retainsProtectedSessionAccess: true
+    },
     {
         label: 'observer',
         role: 'viewer',
@@ -409,11 +409,10 @@ describe('database live-demo seat contract', () => {
             surface: 'whitecell',
             accessCode: 'admin2025',
             sessionId: session.id,
-            teamId: 'blue',
-            role: 'blue_whitecell_lead',
-            operatorName: 'Blue White Cell Lead'
+            role: 'whitecell_lead',
+            operatorName: 'White Cell Lead'
         });
-        await database.claimParticipantSeat(session.id, 'blue_whitecell_lead', 'Blue White Cell Lead');
+        await database.claimParticipantSeat(session.id, 'whitecell_lead', 'White Cell Lead');
 
         const adjudicatedAction = await database.adjudicateAction(submittedAction.id, {
             outcome: 'SUCCESS',
@@ -475,7 +474,6 @@ describe('database live-demo seat contract', () => {
                     surface: 'whitecell',
                     accessCode: 'admin2025',
                     sessionId: session.id,
-                    teamId: roleCase.teamId,
                     role: roleCase.role,
                     operatorName: `${roleCase.label} operator`
                 });

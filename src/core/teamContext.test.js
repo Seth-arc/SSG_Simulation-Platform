@@ -18,11 +18,11 @@ describe('teamContext', () => {
     it('builds team-scoped roles and routes for shipped teams', () => {
         expect(buildTeamRole('blue', ROLE_SURFACES.FACILITATOR)).toBe('blue_facilitator');
         expect(buildTeamRole('red', ROLE_SURFACES.NOTETAKER)).toBe('red_notetaker');
-        expect(buildTeamRole('green', ROLE_SURFACES.WHITECELL)).toBe('green_whitecell_lead');
-        expect(buildWhiteCellOperatorRole('green', WHITE_CELL_OPERATOR_ROLES.SUPPORT)).toBe('green_whitecell_support');
+        expect(buildTeamRole('green', ROLE_SURFACES.WHITECELL)).toBe('whitecell_lead');
+        expect(buildWhiteCellOperatorRole('green', WHITE_CELL_OPERATOR_ROLES.SUPPORT)).toBe('whitecell_support');
 
         expect(getRoleRoute('red_facilitator', { basePath: '/repo-slug/' })).toBe('/repo-slug/teams/red/facilitator.html');
-        expect(getRoleRoute('green_whitecell_support', { basePath: '/repo-slug/' })).toBe('/repo-slug/teams/green/whitecell.html');
+        expect(getRoleRoute('whitecell_support', { basePath: '/repo-slug/' })).toBe('/repo-slug/teams/blue/whitecell.html');
         expect(getRoleRoute('viewer', { observerTeamId: 'red', basePath: '/repo-slug/' })).toBe('/repo-slug/teams/red/facilitator.html?mode=observer');
     });
 
@@ -45,7 +45,7 @@ describe('teamContext', () => {
         expect(context.facilitatorRole).toBe('green_facilitator');
         expect(context.notetakerRoute).toBe('/repo-slug/teams/green/notetaker.html');
         expect(getRoleDisplayName('green_notetaker')).toBe('Green Team Notetaker');
-        expect(getRoleDisplayName('green_whitecell_support')).toBe('Green Team White Cell Support');
+        expect(getRoleDisplayName('green_whitecell_support')).toBe('White Cell Support');
         expect(getRoleDisplayName('viewer', { observerTeamId: 'green' })).toBe('Green Team Observer');
     });
 

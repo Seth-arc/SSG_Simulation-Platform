@@ -3,6 +3,7 @@ import {
     WHITE_CELL_OPERATOR_ROLES,
     buildTeamRole,
     buildWhiteCellOperatorRole,
+    normalizeWhiteCellOperatorRole,
     ROLE_SURFACES
 } from './teamContext.js';
 
@@ -18,17 +19,14 @@ export const LIVE_DEMO_SEAT_LIMITS = Object.freeze({
 const TEAM_ROLE_LIMITS = Object.fromEntries(
     TEAM_OPTIONS.flatMap((team) => ([
         [buildTeamRole(team.id, ROLE_SURFACES.FACILITATOR), LIVE_DEMO_SEAT_LIMITS.facilitator],
-        [buildTeamRole(team.id, ROLE_SURFACES.NOTETAKER), LIVE_DEMO_SEAT_LIMITS.notetaker],
-        [
-            buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.LEAD),
-            LIVE_DEMO_SEAT_LIMITS.whiteCellLead
-        ],
-        [
-            buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.SUPPORT),
-            LIVE_DEMO_SEAT_LIMITS.whiteCellSupport
-        ]
+        [buildTeamRole(team.id, ROLE_SURFACES.NOTETAKER), LIVE_DEMO_SEAT_LIMITS.notetaker]
     ]))
 );
+
+const WHITE_CELL_ROLE_LIMITS = Object.freeze({
+    [buildWhiteCellOperatorRole(WHITE_CELL_OPERATOR_ROLES.LEAD)]: LIVE_DEMO_SEAT_LIMITS.whiteCellLead,
+    [buildWhiteCellOperatorRole(WHITE_CELL_OPERATOR_ROLES.SUPPORT)]: LIVE_DEMO_SEAT_LIMITS.whiteCellSupport
+});
 
 /**
  * Application Configuration
@@ -45,6 +43,7 @@ export const CONFIG = {
     ROLE_LIMITS: {
         white: LIVE_DEMO_SEAT_LIMITS.gameMaster,
         ...TEAM_ROLE_LIMITS,
+        ...WHITE_CELL_ROLE_LIMITS,
         viewer: LIVE_DEMO_SEAT_LIMITS.observer
     },
 
@@ -108,7 +107,8 @@ export function isValidSupabaseUrl(url) {
 }
 
 export function getRoleLimit(role, config = CONFIG) {
-    return config.ROLE_LIMITS?.[role] ?? Number.POSITIVE_INFINITY;
+    const normalizedRole = normalizeWhiteCellOperatorRole(role);
+    return config.ROLE_LIMITS?.[normalizedRole] ?? config.ROLE_LIMITS?.[role] ?? Number.POSITIVE_INFINITY;
 }
 
 export function getHeartbeatTimeoutMs(config = CONFIG) {

@@ -97,15 +97,13 @@ test('@live-demo one-team topology covers operator session creation, onboarding,
 
         await authorizeWhiteCell(whiteCellLead, {
             sessionCode,
-            displayName: 'Blue White Cell Lead',
-            team: 'blue',
+            displayName: 'White Cell Lead',
             operatorRole: 'lead'
         });
 
         await authorizeWhiteCell(whiteCellSupport, {
             sessionCode,
-            displayName: 'Blue White Cell Support',
-            team: 'blue',
+            displayName: 'White Cell Support',
             operatorRole: 'support'
         });
 
@@ -173,8 +171,8 @@ test('@live-demo one-team topology covers operator session creation, onboarding,
             blue_facilitator: 1,
             blue_notetaker: 4,
             viewer: 5,
-            blue_whitecell_lead: 1,
-            blue_whitecell_support: 1
+            whitecell_lead: 1,
+            whitecell_support: 1
         }));
     });
 

@@ -27,11 +27,11 @@
         }
     </style>
   <script type="module" crossorigin src="/assets/supabase-BQbgwcOn.js"></script>
-  <script type="module" crossorigin src="/assets/main-Bj4Mtr9K.js"></script>
-  <script type="module" crossorigin src="/assets/formatting-DCt3gzwf.js"></script>
+  <script type="module" crossorigin src="/assets/main-DZBuIOYm.js"></script>
+  <script type="module" crossorigin src="/assets/formatting-DEavf3G9.js"></script>
   <script type="module" crossorigin src="/assets/Modal-O3kyaPUL.js"></script>
-  <script type="module" crossorigin src="/assets/whitecell-E9K5dkVr.js"></script>
-  <link rel="stylesheet" crossorigin href="/assets/main-Zi4aJJ8H.css">
+  <script type="module" crossorigin src="/assets/whitecell-Bwyf-nVE.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/main-D0Os2kzt.css">
   <link rel="stylesheet" crossorigin href="/assets/formatting-BmVTRCK5.css">
 </head>
 <body data-team="green">
@@ -213,6 +213,32 @@
                                 <button class="btn btn-secondary w-full" id="resetTimerBtn">Reset to 90:00</button>
                             </div>
                         </div>
+
+                        <div class="card card-bordered" style="padding: var(--space-4); margin-top: var(--space-4);">
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-3);">
+                                <div>
+                                    <h3 class="text-base font-semibold">Live Participants</h3>
+                                    <p class="text-sm text-gray-500" id="participantsSummary">Loading participant roster...</p>
+                                </div>
+                            </div>
+                            <div class="section-grid section-grid-2" style="margin-bottom: var(--space-3);">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label" for="participantsTeamFilter">Team Filter</label>
+                                    <select id="participantsTeamFilter" class="form-input form-select" aria-controls="participantsList">
+                                        <option value="">All Teams</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label" for="participantsRoleFilter">Role Filter</label>
+                                    <select id="participantsRoleFilter" class="form-input form-select" aria-controls="participantsList">
+                                        <option value="">All Roles</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div id="participantsList" class="card-list" aria-live="polite">
+                                <!-- Connected participants will be populated here -->
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -315,6 +341,20 @@
                     </div>
 
                     <div class="section-body">
+                        <div class="section-grid section-grid-2" style="margin-bottom: var(--space-4);">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label" for="timelineTeamFilter">Team Filter</label>
+                                <select id="timelineTeamFilter" class="form-input form-select" aria-controls="timelineList">
+                                    <option value="">All Teams</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label" for="timelineRoleFilter">Role Filter</label>
+                                <select id="timelineRoleFilter" class="form-input form-select" aria-controls="timelineList">
+                                    <option value="">All Roles</option>
+                                </select>
+                            </div>
+                        </div>
                         <div id="timelineList" aria-live="polite">
                             <!-- Timeline will be populated here -->
                         </div>

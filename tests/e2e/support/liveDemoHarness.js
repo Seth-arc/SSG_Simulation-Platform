@@ -131,14 +131,33 @@ export async function createIsolatedActorPage(context, actorName, { resetBackend
 }
 
 export async function openOperatorAccessSection(page) {
+    await prepareLandingPage(page);
+
     const operatorAccessSection = page.locator('#operatorAccessSection');
     await expect(operatorAccessSection).toBeVisible();
 
     if (!(await operatorAccessSection.evaluate((element) => element.hasAttribute('open')))) {
-        await operatorAccessSection.locator('summary').click();
+        await operatorAccessSection.evaluate((element) => {
+            element.setAttribute('open', '');
+        });
     }
 
     await expect(page.locator('#operatorAccessCode')).toBeVisible();
+}
+
+export async function prepareLandingPage(page) {
+    const bootLoader = page.locator('#ssgBootLoader');
+
+    if (await bootLoader.count() > 0 && await bootLoader.isVisible()) {
+        const simulationButton = page.locator('#bootFracturedOrderOption');
+        await simulationButton.evaluate((element) => {
+            element.disabled = false;
+        });
+        await simulationButton.click();
+        await bootLoader.waitFor({ state: 'hidden' });
+    }
+
+    await expect(page.locator('#joinForm')).toBeVisible();
 }
 
 export async function authorizeGameMaster(page, {
@@ -181,6 +200,7 @@ export async function joinPublicParticipant(page, {
     roleSurface = 'facilitator'
 } = {}) {
     await page.goto('/');
+    await prepareLandingPage(page);
     await page.locator('#sessionCode').fill(sessionCode);
     await page.locator('#displayName').fill(displayName);
     await page.locator(`.chip[data-team="${team}"]`).click();
@@ -191,6 +211,7 @@ export async function joinPublicParticipant(page, {
 
 export async function expectJoinFailure(page, joinOptions, expectedMessage) {
     await page.goto('/');
+    await prepareLandingPage(page);
     await page.locator('#sessionCode').fill(joinOptions.sessionCode);
     await page.locator('#displayName').fill(joinOptions.displayName);
     await page.locator(`.chip[data-team="${joinOptions.team || 'blue'}"]`).click();
@@ -204,14 +225,13 @@ export async function expectJoinFailure(page, joinOptions, expectedMessage) {
 export async function authorizeWhiteCell(page, {
     sessionCode,
     displayName,
-    team = 'blue',
     operatorRole = 'lead',
     operatorAccessCode = OPERATOR_ACCESS_CODE
 } = {}) {
     await page.goto('/');
+    await prepareLandingPage(page);
     await page.locator('#sessionCode').fill(sessionCode);
     await page.locator('#displayName').fill(displayName);
-    await page.locator(`.chip[data-team="${team}"]`).click();
     await openOperatorAccessSection(page);
     await page.locator('#operatorAccessCode').fill(operatorAccessCode);
 

@@ -11,22 +11,26 @@ import { showInlineLoader } from '../../components/ui/Loader.js';
 import { formatRelativeTime } from '../../utils/formatting.js';
 import { getRoleLimit } from '../../core/config.js';
 import { createLogger } from '../../utils/logger.js';
-import { TEAM_OPTIONS } from '../../core/teamContext.js';
+import { TEAM_OPTIONS, normalizeWhiteCellOperatorRole } from '../../core/teamContext.js';
 
 const logger = createLogger('ParticipantList');
 
 const ROLE_CONFIG = {
     white: { label: 'Game Master', color: 'primary', icon: 'GM' },
     viewer: { label: 'Observer', color: 'default', icon: 'OB' },
+    whitecell_lead: { label: 'White Cell Lead', color: 'warning', icon: 'WL' },
+    whitecell_support: { label: 'White Cell Support', color: 'warning', icon: 'WS' },
     ...Object.fromEntries(
         TEAM_OPTIONS.flatMap((team) => ([
             [`${team.id}_facilitator`, { label: `${team.shortLabel} Facilitator`, color: 'info', icon: team.shortLabel.slice(0, 1) }],
-            [`${team.id}_notetaker`, { label: `${team.shortLabel} Notetaker`, color: 'success', icon: team.shortLabel.slice(0, 1) }],
-            [`${team.id}_whitecell_lead`, { label: `${team.shortLabel} White Cell Lead`, color: 'warning', icon: `${team.shortLabel.slice(0, 1)}L` }],
-            [`${team.id}_whitecell_support`, { label: `${team.shortLabel} White Cell Support`, color: 'warning', icon: `${team.shortLabel.slice(0, 1)}S` }]
+            [`${team.id}_notetaker`, { label: `${team.shortLabel} Notetaker`, color: 'success', icon: team.shortLabel.slice(0, 1) }]
         ]))
     )
 };
+
+function normalizeParticipantRoleKey(role) {
+    return normalizeWhiteCellOperatorRole(role) || role;
+}
 
 /**
  * Create a participant list component
@@ -108,7 +112,8 @@ export function createParticipantList(options = {}) {
     function renderRoleCounts(activeParticipants) {
         const counts = {};
         activeParticipants.forEach((participant) => {
-            counts[participant.role] = (counts[participant.role] || 0) + 1;
+            const normalizedRole = normalizeParticipantRoleKey(participant.role);
+            counts[normalizedRole] = (counts[normalizedRole] || 0) + 1;
         });
 
         roleCountsContainer.innerHTML = Object.entries(ROLE_CONFIG).map(([role, config]) => {
@@ -170,7 +175,7 @@ export function createParticipantList(options = {}) {
  */
 function createParticipantCard(participant, options = {}) {
     const { isActive = true } = options;
-    const config = ROLE_CONFIG[participant.role] || ROLE_CONFIG.viewer;
+    const config = ROLE_CONFIG[normalizeParticipantRoleKey(participant.role)] || ROLE_CONFIG.viewer;
 
     const card = document.createElement('div');
     card.className = `participant-card ${isActive ? '' : 'participant-card-inactive'}`;

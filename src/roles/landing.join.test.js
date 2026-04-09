@@ -253,8 +253,8 @@ describe('landing secure join flow', () => {
             id: 'grant-1',
             surface: 'whitecell',
             sessionId: 'session-1',
-            teamId: 'blue',
-            role: 'blue_whitecell_lead',
+            teamId: null,
+            role: 'whitecell_lead',
             operatorName: 'Morgan'
         });
         mockDatabase.claimParticipantSeat.mockResolvedValue({
@@ -277,11 +277,10 @@ describe('landing secure join flow', () => {
             surface: 'whitecell',
             accessCode: 'admin2025',
             sessionId: 'session-1',
-            teamId: 'blue',
-            role: 'blue_whitecell_lead',
+            role: 'whitecell_lead',
             operatorName: 'Morgan'
         });
-        expect(mockDatabase.claimParticipantSeat).toHaveBeenCalledWith('session-1', 'blue_whitecell_lead', 'Morgan');
+        expect(mockDatabase.claimParticipantSeat).toHaveBeenCalledWith('session-1', 'whitecell_lead', 'Morgan');
         expect(mockSyncService.initialize).toHaveBeenCalledWith('session-1', {
             participantId: 'session-participant-1'
         });
@@ -290,10 +289,10 @@ describe('landing secure join flow', () => {
             surface: 'whitecell',
             sessionId: 'session-1',
             sessionCode: 'ALPHA2026',
-            teamId: 'blue',
-            role: 'blue_whitecell_lead',
+            teamId: null,
+            role: 'whitecell_lead',
             operatorName: 'Morgan'
         }));
-        expect(controller.redirectToRole).toHaveBeenCalledWith('blue_whitecell_lead');
+        expect(controller.redirectToRole).toHaveBeenCalledWith('whitecell_lead');
     });
 });

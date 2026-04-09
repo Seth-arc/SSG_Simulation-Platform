@@ -34,6 +34,8 @@ export const TEAM_OPTIONS = Object.freeze([
     { id: 'green', label: 'Green Team', shortLabel: 'Green' }
 ]);
 
+const WHITE_CELL_CANONICAL_ROUTE = 'teams/blue/whitecell.html';
+
 const TEAM_MAP = Object.freeze(
     Object.fromEntries(TEAM_OPTIONS.map((team) => [team.id, team]))
 );
@@ -60,24 +62,29 @@ export function buildTeamRole(teamId, surface) {
     }
 
     if (surface === ROLE_SURFACES.WHITECELL) {
-        return buildWhiteCellOperatorRole(teamId, WHITE_CELL_OPERATOR_ROLES.LEAD);
+        return buildWhiteCellOperatorRole(WHITE_CELL_OPERATOR_ROLES.LEAD);
     }
 
     const team = getTeamConfig(teamId);
     return `${team.id}_${surface}`;
 }
 
-export function buildWhiteCellOperatorRole(teamId, operatorRole = WHITE_CELL_OPERATOR_ROLES.LEAD) {
-    const team = getTeamConfig(teamId);
-    const normalizedOperatorRole = operatorRole === WHITE_CELL_OPERATOR_ROLES.SUPPORT
+function normalizeWhiteCellOperatorRoleName(operatorRole = WHITE_CELL_OPERATOR_ROLES.LEAD) {
+    return operatorRole === WHITE_CELL_OPERATOR_ROLES.SUPPORT
         ? WHITE_CELL_OPERATOR_ROLES.SUPPORT
         : WHITE_CELL_OPERATOR_ROLES.LEAD;
+}
 
-    return `${team.id}_${ROLE_SURFACES.WHITECELL}_${normalizedOperatorRole}`;
+export function buildWhiteCellOperatorRole(teamIdOrOperatorRole = WHITE_CELL_OPERATOR_ROLES.LEAD, operatorRole = null) {
+    const normalizedOperatorRole = normalizeWhiteCellOperatorRoleName(
+        operatorRole === null ? teamIdOrOperatorRole : operatorRole
+    );
+
+    return `${ROLE_SURFACES.WHITECELL}_${normalizedOperatorRole}`;
 }
 
 export function isWhiteCellOperatorRole(role = '') {
-    return /^(blue|red|green)_whitecell(?:_(lead|support))?$/.test(role);
+    return /^(?:(blue|red|green)_)?whitecell(?:_(lead|support))?$/.test(role);
 }
 
 export function normalizeWhiteCellOperatorRole(role = '') {
@@ -85,15 +92,13 @@ export function normalizeWhiteCellOperatorRole(role = '') {
         return role ?? null;
     }
 
-    const match = role.match(/^(blue|red|green)_whitecell(?:_(lead|support))?$/);
+    const normalizedRole = role.trim();
+    const match = normalizedRole.match(/^(?:(blue|red|green)_)?whitecell(?:_(lead|support))?$/);
     if (!match) {
         return role;
     }
 
-    return buildWhiteCellOperatorRole(
-        match[1],
-        match[2] || WHITE_CELL_OPERATOR_ROLES.LEAD
-    );
+    return buildWhiteCellOperatorRole(match[2] || WHITE_CELL_OPERATOR_ROLES.LEAD);
 }
 
 export function parseTeamRole(role = '') {
@@ -105,7 +110,9 @@ export function parseTeamRole(role = '') {
         };
     }
 
-    if (role === 'viewer') {
+    const normalizedRole = normalizeWhiteCellOperatorRole(role);
+
+    if (normalizedRole === 'viewer') {
         return {
             teamId: null,
             surface: ROLE_SURFACES.VIEWER,
@@ -113,7 +120,20 @@ export function parseTeamRole(role = '') {
         };
     }
 
-    const match = role.match(/^(blue|red|green)_(facilitator|notetaker|whitecell)(?:_(lead|support))?$/);
+    if (
+        normalizedRole === buildWhiteCellOperatorRole(WHITE_CELL_OPERATOR_ROLES.LEAD)
+        || normalizedRole === buildWhiteCellOperatorRole(WHITE_CELL_OPERATOR_ROLES.SUPPORT)
+    ) {
+        return {
+            teamId: null,
+            surface: ROLE_SURFACES.WHITECELL,
+            operatorRole: normalizedRole === buildWhiteCellOperatorRole(WHITE_CELL_OPERATOR_ROLES.SUPPORT)
+                ? WHITE_CELL_OPERATOR_ROLES.SUPPORT
+                : WHITE_CELL_OPERATOR_ROLES.LEAD
+        };
+    }
+
+    const match = normalizedRole.match(/^(blue|red|green)_(facilitator|notetaker)$/);
     if (!match) {
         return {
             teamId: null,
@@ -125,9 +145,7 @@ export function parseTeamRole(role = '') {
     return {
         teamId: match[1],
         surface: match[2],
-        operatorRole: match[2] === ROLE_SURFACES.WHITECELL
-            ? (match[3] || WHITE_CELL_OPERATOR_ROLES.LEAD)
-            : null
+        operatorRole: null
     };
 }
 
@@ -161,6 +179,10 @@ export function getRoleRoute(role, { observerTeamId = 'blue', basePath } = {}) {
     }
 
     const parsedRole = parseTeamRole(role);
+    if (parsedRole.surface === ROLE_SURFACES.WHITECELL) {
+        return buildAppPath(WHITE_CELL_CANONICAL_ROUTE, { basePath });
+    }
+
     if (!parsedRole.teamId || !parsedRole.surface) {
         return null;
     }
@@ -178,15 +200,14 @@ export function getRoleDisplayName(role, { observerTeamId = null } = {}) {
     }
 
     const parsedRole = parseTeamRole(role);
-    if (!parsedRole.teamId || !parsedRole.surface) {
-        return role || '';
+    if (parsedRole.surface === ROLE_SURFACES.WHITECELL) {
+        return parsedRole.operatorRole === WHITE_CELL_OPERATOR_ROLES.SUPPORT
+            ? 'White Cell Support'
+            : 'White Cell Lead';
     }
 
-    if (parsedRole.surface === ROLE_SURFACES.WHITECELL) {
-        const labels = getTeamRoleLabels(parsedRole.teamId);
-        return parsedRole.operatorRole === WHITE_CELL_OPERATOR_ROLES.SUPPORT
-            ? labels.whitecellSupport
-            : labels.whitecellLead;
+    if (!parsedRole.teamId || !parsedRole.surface) {
+        return role || '';
     }
 
     return getTeamRoleLabels(parsedRole.teamId)[parsedRole.surface] || role;
@@ -211,6 +232,8 @@ export function resolveTeamContext({
     const routeTeam = relativePath.match(/^teams\/(blue|red|green)\//)?.[1];
     const team = getTeamConfig(datasetTeam || routeTeam || fallbackTeamId);
     const labels = getTeamRoleLabels(team.id);
+    const whitecellLeadRole = buildWhiteCellOperatorRole(WHITE_CELL_OPERATOR_ROLES.LEAD);
+    const whitecellSupportRole = buildWhiteCellOperatorRole(WHITE_CELL_OPERATOR_ROLES.SUPPORT);
 
     return {
         teamId: team.id,
@@ -218,19 +241,19 @@ export function resolveTeamContext({
         teamShortLabel: team.shortLabel,
         facilitatorRole: buildTeamRole(team.id, ROLE_SURFACES.FACILITATOR),
         notetakerRole: buildTeamRole(team.id, ROLE_SURFACES.NOTETAKER),
-        whitecellRole: buildTeamRole(team.id, ROLE_SURFACES.WHITECELL),
-        whitecellLeadRole: buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.LEAD),
-        whitecellSupportRole: buildWhiteCellOperatorRole(team.id, WHITE_CELL_OPERATOR_ROLES.SUPPORT),
+        whitecellRole: whitecellLeadRole,
+        whitecellLeadRole,
+        whitecellSupportRole,
         observerRole: 'viewer',
         facilitatorLabel: labels.facilitator,
         notetakerLabel: labels.notetaker,
-        whitecellLabel: labels.whitecell,
-        whitecellLeadLabel: labels.whitecellLead,
-        whitecellSupportLabel: labels.whitecellSupport,
+        whitecellLabel: 'White Cell',
+        whitecellLeadLabel: 'White Cell Lead',
+        whitecellSupportLabel: 'White Cell Support',
         observerLabel: labels.observer,
         facilitatorRoute: buildTeamRoute(team.id, ROLE_SURFACES.FACILITATOR, { basePath }),
         notetakerRoute: buildTeamRoute(team.id, ROLE_SURFACES.NOTETAKER, { basePath }),
-        whitecellRoute: buildTeamRoute(team.id, ROLE_SURFACES.WHITECELL, { basePath }),
+        whitecellRoute: buildAppPath(WHITE_CELL_CANONICAL_ROUTE, { basePath }),
         observerRoute: buildTeamRoute(team.id, ROLE_SURFACES.FACILITATOR, { observer: true, basePath })
     };
 }
