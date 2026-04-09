@@ -144,7 +144,6 @@ test('@live-demo one-team topology covers operator session creation, onboarding,
             goal: actionGoal
         });
 
-        await observer.reload();
         await expect(observer.locator('body')).toHaveAttribute('data-facilitator-mode', 'observer');
         await expect(observer.locator('#newActionBtn')).toBeHidden();
         await expect(observer.locator('#captureSection')).toBeHidden();
@@ -153,7 +152,6 @@ test('@live-demo one-team topology covers operator session creation, onboarding,
 
         await submitAction(facilitator, actionGoal);
 
-        await whiteCellLead.reload();
         await adjudicateAction(whiteCellLead, {
             goal: actionGoal,
             notes: 'Approved by White Cell lead during the topology rehearsal.'
@@ -161,7 +159,6 @@ test('@live-demo one-team topology covers operator session creation, onboarding,
 
         await expect(whiteCellLead.locator('#adjudicationQueue')).toContainText('No actions are waiting for adjudication.');
 
-        await observer.reload();
         await expect(observer.locator('#actionsList')).toContainText(actionGoal);
         await expect(observer.locator('#actionsList')).toContainText('Success');
         await expect(observer.locator('#actionsList')).toContainText('Approved by White Cell lead during the topology rehearsal.');
@@ -232,7 +229,7 @@ test('@live-demo facilitator disconnect recovery and concurrent notetaker captur
         });
     });
 
-    await test.step('preserve seat-scoped notetaker notes while shared captures append from two concurrent notetakers', async () => {
+    await test.step('preserve seat-scoped notetaker notes while shared captures append from two concurrent notetakers and survive logout', async () => {
         await joinPublicParticipant(noteOne, {
             sessionCode,
             displayName: 'Recovery Notetaker 1',
@@ -285,8 +282,24 @@ test('@live-demo facilitator disconnect recovery and concurrent notetaker captur
         await noteTwo.locator('#captureForm').getByRole('button', { name: 'Save Observation' }).click();
         await waitForToast(noteTwo, 'Observation saved');
 
-        await noteOne.reload();
-        await noteTwo.reload();
+        await noteOne.locator('#logoutBtn').click();
+        await noteTwo.locator('#logoutBtn').click();
+        await noteOne.waitForURL(/\/$/);
+        await noteTwo.waitForURL(/\/$/);
+
+        await joinPublicParticipant(noteOne, {
+            sessionCode,
+            displayName: 'Recovery Notetaker 1',
+            team: 'blue',
+            roleSurface: 'notetaker'
+        });
+
+        await joinPublicParticipant(noteTwo, {
+            sessionCode,
+            displayName: 'Recovery Notetaker 2',
+            team: 'blue',
+            roleSurface: 'notetaker'
+        });
 
         await expect(noteOne.locator('#recentCaptures')).toContainText('Seat one capture');
         await expect(noteOne.locator('#recentCaptures')).toContainText('Seat two capture');

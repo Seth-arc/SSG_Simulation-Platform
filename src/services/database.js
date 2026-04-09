@@ -141,16 +141,23 @@ function shouldFallbackActiveParticipantsQuery(error = null) {
     );
 }
 
-async function fetchActiveParticipantsDirect(sessionId) {
-    const { data, error } = await supabase
+async function fetchSessionParticipantsDirect(sessionId, { activeOnly = false } = {}) {
+    let query = supabase
         .from('session_participants')
         .select('*, participants(name, client_id)')
-        .eq('session_id', sessionId)
-        .eq('is_active', true)
-        .order('joined_at', { ascending: true });
+        .eq('session_id', sessionId);
+
+    if (activeOnly) {
+        query = query.eq('is_active', true);
+    }
+
+    const { data, error } = await query.order('joined_at', { ascending: true });
 
     if (error) {
-        throw fromSupabaseError(error, 'getActiveParticipantsFallback');
+        throw fromSupabaseError(
+            error,
+            activeOnly ? 'getActiveParticipantsFallback' : 'getSessionParticipants'
+        );
     }
 
     return (data || []).map((participant) => normalizeParticipantSeatRecord(participant));
@@ -670,6 +677,16 @@ export const database = {
     },
 
     /**
+     * Get the full participant seat history for a session, including inactive seats.
+     * @param {string} sessionId - Session ID
+     * @returns {Promise<Object[]>} Session participants with names from the participants table
+     */
+    async getSessionParticipants(sessionId) {
+        await ensureAuthenticatedBrowser();
+        return fetchSessionParticipantsDirect(sessionId);
+    },
+
+    /**
      * Get active participants for a session
      * @param {string} sessionId - Session ID
      * @returns {Promise<Object[]>} Active participants with names from participants table
@@ -686,7 +703,7 @@ export const database = {
                 logger.warn('Participant roster RPC is ambiguous on this backend. Falling back to direct session_participants read.', {
                     sessionId
                 });
-                return fetchActiveParticipantsDirect(sessionId);
+                return fetchSessionParticipantsDirect(sessionId, { activeOnly: true });
             }
             throw fromSupabaseError(error, 'getActiveParticipants');
         }
@@ -1223,7 +1240,7 @@ export const database = {
         const [session, gameState, participants, actions, requests, timeline] = await Promise.all([
             this.getSession(sessionId),
             this.getGameState(sessionId).catch(() => null),
-            this.getActiveParticipants(sessionId).catch(() => []),
+            this.getSessionParticipants(sessionId).catch(() => []),
             this.fetchActions(sessionId).catch(() => []),
             this.fetchRequests(sessionId).catch(() => []),
             this.fetchTimeline(sessionId).catch(() => [])

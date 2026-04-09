@@ -118,7 +118,7 @@ async function expectRoleSurface(page, roleCase) {
     }
 }
 
-test('@live-demo browser role matrix covers all teams and roles through join, reload, and operator roster visibility', async ({ browser }) => {
+test('@live-demo browser role matrix covers all teams and roles through join, public-role reauth on reload, and operator roster visibility', async ({ browser }) => {
     test.slow();
 
     const context = await browser.newContext();
@@ -138,7 +138,7 @@ test('@live-demo browser role matrix covers all teams and roles through join, re
         expect(session).toBeTruthy();
     });
 
-    await test.step('join every shipped role across blue, red, and green and survive a page reload', async () => {
+    await test.step('join every shipped role across blue, red, and green and require public roles to log back in after reload', async () => {
         for (const roleCase of LIVE_DEMO_ROLE_MATRIX) {
             const actorPage = await createIsolatedActorPage(context, roleCase.actorName);
 
@@ -160,6 +160,21 @@ test('@live-demo browser role matrix covers all teams and roles through join, re
 
             await expectRoleSurface(actorPage, roleCase);
             await actorPage.reload();
+
+            if (roleCase.roleSurface === ROLE_SURFACES.WHITECELL) {
+                await expectRoleSurface(actorPage, roleCase);
+                continue;
+            }
+
+            await actorPage.waitForURL(/\/$/);
+            await expect(actorPage.locator('#joinForm')).toBeVisible();
+
+            await joinPublicParticipant(actorPage, {
+                sessionCode: SESSION_CODE,
+                displayName: roleCase.displayName,
+                team: roleCase.teamId,
+                roleSurface: roleCase.roleSurface
+            });
             await expectRoleSurface(actorPage, roleCase);
         }
     });

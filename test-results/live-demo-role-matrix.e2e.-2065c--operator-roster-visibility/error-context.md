@@ -1,0 +1,55 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e5]:
+    - paragraph [ref=e6]: Strategic Simulations Group
+    - generic [ref=e9]: Select a simulation to continue
+    - group "Simulation selection" [ref=e11]:
+      - button "Fractured Order Seminar simulation" [ref=e12] [cursor=pointer]:
+        - generic [ref=e13]: Fractured Order
+        - generic [ref=e14]: Seminar simulation
+  - generic [ref=e15]:
+    - complementary [ref=e16]:
+      - img "Fractured Order — A Seminar Simulation" [ref=e17]
+      - generic [ref=e18]:
+        - generic [ref=e19]: SSG Platform
+        - generic [ref=e20]: Beta-2
+    - main [ref=e21]:
+      - generic [ref=e22]:
+        - generic [ref=e23]:
+          - heading "Join Session" [level=2] [ref=e24]
+          - paragraph [ref=e25]: Enter your session code to connect.
+        - generic [ref=e26]:
+          - generic [ref=e27]:
+            - generic [ref=e28]:
+              - generic [ref=e29]: Session Code
+              - textbox "Session Code" [ref=e30]:
+                - /placeholder: ALPHA-2024
+            - generic [ref=e31]:
+              - generic [ref=e32]: Display Name
+              - textbox "Display Name" [active] [ref=e33]:
+                - /placeholder: Your name
+                - text: Role Matrix Game Master
+          - group "Team" [ref=e34]:
+            - generic [ref=e35]: Team
+            - group "Team selection" [ref=e36]:
+              - button "Blue" [pressed] [ref=e37] [cursor=pointer]
+              - button "Red" [ref=e38] [cursor=pointer]
+              - button "Green" [ref=e39] [cursor=pointer]
+          - group "Role" [ref=e40]:
+            - generic [ref=e41]: Role
+            - group "Role selection" [ref=e42]:
+              - button "Facilitator" [ref=e43] [cursor=pointer]:
+                - img [ref=e44]
+                - text: Facilitator
+              - button "Notetaker" [ref=e49] [cursor=pointer]:
+                - img [ref=e50]
+                - text: Notetaker
+              - button "Observer" [ref=e53] [cursor=pointer]:
+                - img [ref=e54]
+                - text: Observer
+          - button "Join Session" [ref=e57] [cursor=pointer]
+        - group [ref=e58]:
+          - generic "+ Operator Access" [ref=e59] [cursor=pointer]
+```

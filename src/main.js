@@ -9,15 +9,90 @@ import { sessionStore } from './stores/session.js';
 import { gameStateStore } from './stores/gameState.js';
 import { participantsStore } from './stores/participants.js';
 import { syncService } from './services/sync.js';
+import { database } from './services/database.js';
 import { getRuntimeConfigStatus, renderMissingBackendNotice } from './services/supabase.js';
 import { createLogger } from './utils/logger.js';
 import { showToast } from './components/ui/Toast.js';
 import { hideLoader } from './components/ui/Loader.js';
 import { ConfigurationError } from './core/errors.js';
 import { isLandingPage, navigateToApp } from './core/navigation.js';
+import { isPublicRoleSurface, parseTeamRole } from './core/teamContext.js';
 
 const logger = createLogger('Main');
 const runtimeConfigStatus = getRuntimeConfigStatus();
+
+export function getNavigationType({
+    performanceRef = typeof window !== 'undefined' ? window.performance : globalThis.performance
+} = {}) {
+    const navigationEntry = performanceRef?.getEntriesByType?.('navigation')?.[0];
+    if (typeof navigationEntry?.type === 'string' && navigationEntry.type) {
+        return navigationEntry.type;
+    }
+
+    if (performanceRef?.navigation) {
+        return performanceRef.navigation.type === 1 ? 'reload' : 'navigate';
+    }
+
+    return null;
+}
+
+export function getSessionRoleSurface(snapshot = sessionStore.getSnapshot()) {
+    const cachedSurface = snapshot?.sessionData?.roleSurface;
+    if (cachedSurface) {
+        return cachedSurface;
+    }
+
+    const resolvedRole = snapshot?.role || snapshot?.sessionData?.role || null;
+    return parseTeamRole(resolvedRole).surface || null;
+}
+
+export function shouldRequireFreshParticipantLoginOnReload({
+    snapshot = sessionStore.getSnapshot(),
+    navigationType = getNavigationType(),
+    landingPage = isLandingPage()
+} = {}) {
+    if (landingPage || navigationType !== 'reload') {
+        return false;
+    }
+
+    if (!snapshot?.sessionId) {
+        return false;
+    }
+
+    return isPublicRoleSurface(getSessionRoleSurface(snapshot));
+}
+
+export async function enforceReloadReauthentication({
+    snapshot = sessionStore.getSnapshot(),
+    locationRef = typeof window !== 'undefined' ? window.location : null,
+    navigationType = getNavigationType(),
+    landingPage = isLandingPage()
+} = {}) {
+    if (!shouldRequireFreshParticipantLoginOnReload({
+        snapshot,
+        navigationType,
+        landingPage
+    })) {
+        return false;
+    }
+
+    const participantId = snapshot.sessionData?.participantSessionId
+        || snapshot.sessionData?.participantId
+        || null;
+
+    if (snapshot.sessionId && participantId) {
+        try {
+            await database.disconnectParticipant(snapshot.sessionId, participantId);
+        } catch (error) {
+            logger.warn('Failed to disconnect participant during reload reauthentication:', error);
+        }
+    }
+
+    await syncService.reset();
+    sessionStore.clear();
+    navigateToApp('', { locationRef, replace: true });
+    return true;
+}
 
 /**
  * Initialize the application
@@ -28,6 +103,11 @@ async function initApp() {
     if (!runtimeConfigStatus.ready) {
         logger.error('Backend configuration is missing:', runtimeConfigStatus.issues);
         renderMissingBackendNotice();
+        hideLoader();
+        return;
+    }
+
+    if (await enforceReloadReauthentication()) {
         hideLoader();
         return;
     }

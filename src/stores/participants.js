@@ -116,7 +116,7 @@ class ParticipantsStore {
         }
 
         try {
-            const data = await database.getActiveParticipants(this.sessionId);
+            const data = await database.getSessionParticipants(this.sessionId);
 
             this.participants = data || [];
             this.lastLoadError = null;
