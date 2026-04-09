@@ -5,6 +5,7 @@
 -- 1) Collapse legacy team-scoped White Cell seats into a single platform-wide lead/support pair.
 -- 2) Preserve legacy role strings by normalizing them into whitecell_lead / whitecell_support.
 -- 3) Keep the live operator authorization and seat-claim RPCs aligned with the shipped frontend.
+-- 4) Preserve the public participant join contract introduced in the facilitator join access fix.
 
 BEGIN;
 
@@ -292,7 +293,10 @@ BEGIN
     END IF;
 
     PERFORM pg_advisory_xact_lock(hashtext(requested_session_id::TEXT || ':' || normalized_role));
-    PERFORM public.release_stale_session_role_seats(requested_session_id, normalized_timeout_seconds);
+    PERFORM public.release_stale_session_role_seats_internal(
+        requested_session_id,
+        normalized_timeout_seconds
+    );
 
     INSERT INTO public.participants (
         auth_user_id,

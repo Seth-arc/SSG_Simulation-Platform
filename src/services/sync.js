@@ -132,13 +132,14 @@ class SyncService {
 
         logger.info('Initializing stores...');
 
-        // Initialize stores in parallel where possible
+        // Restore the participant seat before protected session reads on reload.
+        await participantsStore.initialize(this.sessionId, resolvedParticipantId);
+
         await Promise.all([
             gameStateStore.initialize(this.sessionId),
             actionsStore.initialize(this.sessionId),
             requestsStore.initialize(this.sessionId),
             timelineStore.initialize(this.sessionId),
-            participantsStore.initialize(this.sessionId, resolvedParticipantId),
             communicationsStore.initialize(this.sessionId)
         ]);
 

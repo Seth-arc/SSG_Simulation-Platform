@@ -91,7 +91,7 @@ class ParticipantsStore {
 
         // Start heartbeat if we have a current participant, even if roster loading failed.
         if (this.currentParticipantId) {
-            this.startHeartbeat();
+            await this.startHeartbeat();
         }
 
         // Start inactive participant cleanup
@@ -395,14 +395,15 @@ class ParticipantsStore {
         this.bindPagehideKeepalive();
 
         // Send initial heartbeat
-        void this.sendHeartbeat();
+        const initialHeartbeat = this.sendHeartbeat();
 
         // Set up interval
         this.heartbeatInterval = setInterval(() => {
-            this.sendHeartbeat();
+            void this.sendHeartbeat();
         }, CONFIG.HEARTBEAT_INTERVAL_MS);
 
         logger.info('Heartbeat started');
+        return initialHeartbeat;
     }
 
     /**

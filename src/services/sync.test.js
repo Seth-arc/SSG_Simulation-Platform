@@ -128,6 +128,12 @@ describe('syncService live bootstrap', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         channelHandlers.clear();
+        mockGameStateStore.initialize.mockResolvedValue();
+        mockActionsStore.initialize.mockResolvedValue();
+        mockRequestsStore.initialize.mockResolvedValue();
+        mockTimelineStore.initialize.mockResolvedValue();
+        mockParticipantsStore.initialize.mockResolvedValue([]);
+        mockCommunicationsStore.initialize.mockResolvedValue();
         global.window = {
             addEventListener: vi.fn(),
             removeEventListener: vi.fn()
@@ -153,6 +159,39 @@ describe('syncService live bootstrap', () => {
         expect(mockParticipantsStore.initialize).toHaveBeenCalledWith('session-live-1', 'seat-explicit-1');
         expect(mockCommunicationsStore.initialize).toHaveBeenCalledWith('session-live-1');
         expect(mockRealtimeService.initialize).toHaveBeenCalledWith('session-live-1');
+    });
+
+    it('restores participant access before loading the remaining session stores', async () => {
+        let resolveParticipants;
+
+        mockParticipantsStore.initialize.mockImplementation(
+            () => new Promise((resolve) => {
+                resolveParticipants = resolve;
+            })
+        );
+
+        const { syncService } = await loadSyncModule();
+        const initializationPromise = syncService.initialize('session-live-3', {
+            participantId: 'seat-reload-1'
+        });
+
+        await Promise.resolve();
+
+        expect(mockParticipantsStore.initialize).toHaveBeenCalledWith('session-live-3', 'seat-reload-1');
+        expect(mockGameStateStore.initialize).not.toHaveBeenCalled();
+        expect(mockActionsStore.initialize).not.toHaveBeenCalled();
+        expect(mockRequestsStore.initialize).not.toHaveBeenCalled();
+        expect(mockTimelineStore.initialize).not.toHaveBeenCalled();
+        expect(mockCommunicationsStore.initialize).not.toHaveBeenCalled();
+
+        resolveParticipants([]);
+        await initializationPromise;
+
+        expect(mockGameStateStore.initialize).toHaveBeenCalledWith('session-live-3');
+        expect(mockActionsStore.initialize).toHaveBeenCalledWith('session-live-3');
+        expect(mockRequestsStore.initialize).toHaveBeenCalledWith('session-live-3');
+        expect(mockTimelineStore.initialize).toHaveBeenCalledWith('session-live-3');
+        expect(mockCommunicationsStore.initialize).toHaveBeenCalledWith('session-live-3');
     });
 
     it('forwards realtime payloads into the corresponding stores', async () => {

@@ -89,7 +89,7 @@ describe('main reload reauthentication guard', () => {
         delete global.document;
     });
 
-    it('requires a fresh login on reload for public participant roles', async () => {
+    it('allows public participant roles to survive a browser reload', async () => {
         const { shouldRequireFreshParticipantLoginOnReload } = await import('./main.js');
 
         expect(shouldRequireFreshParticipantLoginOnReload({
@@ -103,7 +103,7 @@ describe('main reload reauthentication guard', () => {
             },
             navigationType: 'reload',
             landingPage: false
-        })).toBe(true);
+        })).toBe(false);
     });
 
     it('does not force operator roles back through login on reload', async () => {
@@ -123,13 +123,7 @@ describe('main reload reauthentication guard', () => {
         })).toBe(false);
     });
 
-    it('disconnects and clears a public participant session before redirecting after reload', async () => {
-        mockDatabase.disconnectParticipant.mockResolvedValue({
-            id: 'seat-1',
-            is_active: false
-        });
-        mockSyncService.reset.mockResolvedValue();
-
+    it('does not clear or redirect an existing public participant session after reload', async () => {
         const { enforceReloadReauthentication } = await import('./main.js');
         const locationRef = {
             replace: vi.fn(),
@@ -151,13 +145,10 @@ describe('main reload reauthentication guard', () => {
             landingPage: false
         });
 
-        expect(enforced).toBe(true);
-        expect(mockDatabase.disconnectParticipant).toHaveBeenCalledWith('session-1', 'seat-1');
-        expect(mockSyncService.reset).toHaveBeenCalledTimes(1);
-        expect(mockSessionStore.clear).toHaveBeenCalledTimes(1);
-        expect(mockNavigateToApp).toHaveBeenCalledWith('', {
-            locationRef,
-            replace: true
-        });
+        expect(enforced).toBe(false);
+        expect(mockDatabase.disconnectParticipant).not.toHaveBeenCalled();
+        expect(mockSyncService.reset).not.toHaveBeenCalled();
+        expect(mockSessionStore.clear).not.toHaveBeenCalled();
+        expect(mockNavigateToApp).not.toHaveBeenCalled();
     });
 });

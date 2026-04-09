@@ -9,7 +9,6 @@ import { sessionStore } from './stores/session.js';
 import { gameStateStore } from './stores/gameState.js';
 import { participantsStore } from './stores/participants.js';
 import { syncService } from './services/sync.js';
-import { database } from './services/database.js';
 import { getRuntimeConfigStatus, renderMissingBackendNotice } from './services/supabase.js';
 import { createLogger } from './utils/logger.js';
 import { showToast } from './components/ui/Toast.js';
@@ -51,15 +50,7 @@ export function shouldRequireFreshParticipantLoginOnReload({
     navigationType = getNavigationType(),
     landingPage = isLandingPage()
 } = {}) {
-    if (landingPage || navigationType !== 'reload') {
-        return false;
-    }
-
-    if (!snapshot?.sessionId) {
-        return false;
-    }
-
-    return isPublicRoleSurface(getSessionRoleSurface(snapshot));
+    return false;
 }
 
 export async function enforceReloadReauthentication({
@@ -76,22 +67,7 @@ export async function enforceReloadReauthentication({
         return false;
     }
 
-    const participantId = snapshot.sessionData?.participantSessionId
-        || snapshot.sessionData?.participantId
-        || null;
-
-    if (snapshot.sessionId && participantId) {
-        try {
-            await database.disconnectParticipant(snapshot.sessionId, participantId);
-        } catch (error) {
-            logger.warn('Failed to disconnect participant during reload reauthentication:', error);
-        }
-    }
-
-    await syncService.reset();
-    sessionStore.clear();
-    navigateToApp('', { locationRef, replace: true });
-    return true;
+    return false;
 }
 
 /**

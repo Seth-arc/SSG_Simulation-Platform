@@ -1235,12 +1235,15 @@ COMMENT ON FUNCTION public.lookup_joinable_session_by_code(TEXT) IS 'Authenticat
 -- The authoritative live-demo security model is applied by:
 --   data/2026-04-08_live_demo_rls_hardening.sql
 --   data/2026-04-08_facilitator_join_session_access_fix.sql
+--   data/2026-04-09_global_white_cell_role_contract.sql
 --
 -- That committed migration replaces the blanket "Allow all operations" policies
 -- with auth.uid-bound RLS, server-issued operator grants, and protected RPCs
 -- for Game Master / White Cell writes. The follow-up join fix preserves those
 -- protections while allowing first-time public seat claims to perform stale-seat
--- cleanup inside the claim RPC. Review both files alongside this schema when
+-- cleanup inside the claim RPC, and the White Cell role contract keeps that
+-- behavior while normalizing global whitecell_lead / whitecell_support roles.
+-- Review those files alongside this schema when
 -- auditing the current Supabase project.
 --   Required deployment setting:
 --     app.settings.live_demo_operator_code_sha256
