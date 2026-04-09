@@ -114,9 +114,11 @@ describe('Facilitator observer enforcement', () => {
         });
     });
 
-    it('ships a Tribe Street Journal panel in the facilitator responses view', () => {
+    it('ships a standalone Tribe Street Journal sidebar section in the facilitator view', () => {
         const html = readFileSync(FACILITATOR_HTML_PATH, 'utf8');
 
+        expect(html).toContain('data-section="tribeStreetJournal"');
+        expect(html).toContain('id="tribeStreetJournalSection"');
         expect(html).toContain('Tribe Street Journal');
         expect(html).toContain('id="tribeStreetJournalList"');
     });

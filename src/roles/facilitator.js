@@ -188,6 +188,7 @@ export class FacilitatorController {
         const actionsDescription = document.querySelector('#actionsSection .section-description');
         const requestsDescription = document.querySelector('#requestsSection .section-description');
         const responsesDescription = document.querySelector('#responsesSection .section-description');
+        const journalDescription = document.querySelector('#tribeStreetJournalSection .section-description');
         const timelineDescription = document.querySelector('#timelineSection .section-description');
 
         document.body.dataset.facilitatorMode = this.isReadOnly ? 'observer' : 'facilitator';
@@ -234,8 +235,14 @@ export class FacilitatorController {
 
         if (responsesDescription) {
             responsesDescription.textContent = this.isReadOnly
-                ? 'Passive feed of White Cell responses to this team, plus the latest Tribe Street Journal captures.'
-                : 'View responses to your RFIs and communications, plus the latest Tribe Street Journal captures.';
+                ? 'Passive feed of White Cell responses to this team.'
+                : 'View responses to your RFIs and communications';
+        }
+
+        if (journalDescription) {
+            journalDescription.textContent = this.isReadOnly
+                ? 'Passive feed of the latest team notes, moments, and quotes captured during the exercise.'
+                : 'Review the latest team notes, moments, and quotes captured during the exercise.';
         }
 
         if (timelineDescription) {

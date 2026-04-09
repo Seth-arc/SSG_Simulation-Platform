@@ -127,6 +127,17 @@
                         </a>
                     </li>
                     <li class="sidebar-menu-item">
+                        <a href="#tribeStreetJournal" class="sidebar-link" data-section="tribeStreetJournal">
+                            <span class="sidebar-icon">
+                                <svg viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h9a2 2 0 002-2V8.414a2 2 0 00-.586-1.414l-3.414-3.414A2 2 0 009.586 3H4zm5 1.5V8a1 1 0 001 1h3.5"/>
+                                    <path d="M6 11a1 1 0 011-1h5a1 1 0 110 2H7a1 1 0 01-1-1zm0 3a1 1 0 011-1h5a1 1 0 110 2H7a1 1 0 01-1-1z"/>
+                                </svg>
+                            </span>
+                            <span class="sidebar-label">Tribe Street Journal</span>
+                        </a>
+                    </li>
+                    <li class="sidebar-menu-item">
                         <a href="#timeline" class="sidebar-link" data-section="timeline">
                             <span class="sidebar-icon">
                                 <svg viewBox="0 0 20 20" fill="currentColor">
@@ -219,20 +230,24 @@
                     </div>
 
                     <div class="section-body">
-                        <div style="display: flex; flex-direction: column; gap: var(--space-4);">
-                            <div id="responsesList" aria-live="polite">
-                                <!-- Responses will be populated here -->
-                            </div>
+                        <div id="responsesList" aria-live="polite">
+                            <!-- Responses will be populated here -->
+                        </div>
+                    </div>
+                </section>
 
-                            <section class="card card-bordered" style="padding: var(--space-4);" aria-labelledby="tribeStreetJournalHeading">
-                                <div style="margin-bottom: var(--space-3);">
-                                    <h3 id="tribeStreetJournalHeading" class="font-semibold">Tribe Street Journal</h3>
-                                    <p class="text-sm text-gray-500">Latest team notes, moments, and quotes captured during the exercise.</p>
-                                </div>
-                                <div id="tribeStreetJournalList" aria-live="polite">
-                                    <!-- Tribe Street Journal entries will be populated here -->
-                                </div>
-                            </section>
+                <!-- Tribe Street Journal Section -->
+                <section id="tribeStreetJournalSection" class="content-section" style="display: none;">
+                    <div class="section-header">
+                        <div class="section-title-wrapper">
+                            <h2 class="section-title">Tribe Street Journal</h2>
+                            <p class="section-description">Review the latest team notes, moments, and quotes captured during the exercise.</p>
+                        </div>
+                    </div>
+
+                    <div class="section-body">
+                        <div id="tribeStreetJournalList" aria-live="polite">
+                            <!-- Tribe Street Journal entries will be populated here -->
                         </div>
                     </div>
                 </section>
