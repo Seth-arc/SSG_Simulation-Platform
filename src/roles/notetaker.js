@@ -22,7 +22,7 @@ import { createBadge, createStatusBadge, createPriorityBadge } from '../componen
 import { formatDateTime, formatRelativeTime } from '../utils/formatting.js';
 import { debounce } from '../utils/debounce.js';
 import { navigateToApp } from '../core/navigation.js';
-import { resolveTeamContext } from '../core/teamContext.js';
+import { ROLE_SURFACES, buildTeamRole, resolveTeamContext } from '../core/teamContext.js';
 import {
     buildNotetakerParticipantContext,
     filterObservationTimelineByTeam,
@@ -143,6 +143,7 @@ export function buildNotetakerSaveTimelineEvent(noteScope, {
         phase,
         metadata: {
             actor,
+            role: teamId ? buildTeamRole(teamId, ROLE_SURFACES.NOTETAKER) : null,
             source: NOTETAKER_TIMELINE_EVENT_SOURCE,
             note_scope: noteScope,
             ...(participantKey ? { participant_key: participantKey } : {}),
@@ -472,7 +473,10 @@ export class NotetakerController {
                 type,
                 content,
                 team: this.teamId,
-                metadata: { actor: 'notetaker' },
+                metadata: {
+                    actor: 'notetaker',
+                    role: this.teamContext.notetakerRole
+                },
                 move: gameState?.move ?? 1,
                 phase: gameState?.phase ?? 1
             };

@@ -214,4 +214,100 @@ describe('White Cell DOM contract', () => {
             { value: 'green_facilitator', label: 'Green Team Facilitator' }
         ]));
     });
+
+    it('builds participant team and role filters from the live roster', async () => {
+        const { buildWhiteCellParticipantFilterOptions } = await loadWhiteCellModule();
+
+        const { teamOptions, roleOptions } = buildWhiteCellParticipantFilterOptions([
+            { id: 'blue-facilitator', role: 'blue_facilitator' },
+            { id: 'green-notetaker', role: 'green_notetaker' },
+            { id: 'whitecell-seat', role: 'red_whitecell_support' },
+            { id: 'observer-1', role: 'viewer' }
+        ]);
+
+        expect(teamOptions).toEqual(expect.arrayContaining([
+            { value: '', label: 'All Teams' },
+            { value: 'blue', label: 'Blue Team' },
+            { value: 'green', label: 'Green Team' },
+            { value: 'red', label: 'Red Team' },
+            { value: 'observer', label: 'Observers' }
+        ]));
+        expect(roleOptions).toEqual(expect.arrayContaining([
+            { value: '', label: 'All Roles' },
+            { value: 'facilitator', label: 'Facilitators' },
+            { value: 'notetaker', label: 'Notetakers' },
+            { value: 'whitecell', label: 'White Cell' },
+            { value: 'viewer', label: 'Observers' }
+        ]));
+    });
+
+    it('filters live participants and timeline events by selected teams and roles', async () => {
+        const {
+            buildWhiteCellParticipantRoster,
+            buildWhiteCellTimelineFilterOptions,
+            filterWhiteCellParticipants,
+            filterWhiteCellTimelineEvents
+        } = await loadWhiteCellModule();
+
+        const roster = buildWhiteCellParticipantRoster([
+            { id: 'blue-facilitator', role: 'blue_facilitator', is_active: true },
+            { id: 'green-notetaker', role: 'green_notetaker', is_active: true },
+            { id: 'red-whitecell', role: 'red_whitecell_support', is_active: true },
+            { id: 'observer-1', role: 'viewer', is_active: false }
+        ]);
+
+        expect(filterWhiteCellParticipants(roster, {
+            team: 'green',
+            role: 'notetaker'
+        }).map((participant) => participant.id)).toEqual(['green-notetaker']);
+
+        const timelineEvents = [
+            {
+                id: 'timeline-facilitator-action',
+                team: 'blue',
+                type: 'ACTION_CREATED',
+                metadata: { role: 'blue_facilitator' }
+            },
+            {
+                id: 'timeline-facilitator-capture',
+                team: 'blue',
+                type: 'NOTE',
+                metadata: { role: 'blue_facilitator', actor: 'facilitator' }
+            },
+            {
+                id: 'timeline-notetaker',
+                team: 'green',
+                type: 'QUOTE',
+                metadata: { role: 'green_notetaker', actor: 'notetaker' }
+            },
+            {
+                id: 'timeline-whitecell',
+                team: 'white_cell',
+                type: 'GUIDANCE',
+                metadata: { role: 'red_whitecell_support' }
+            }
+        ];
+
+        expect(filterWhiteCellTimelineEvents(timelineEvents, {
+            team: 'blue',
+            role: 'facilitator'
+        }).map((event) => event.id)).toEqual([
+            'timeline-facilitator-action',
+            'timeline-facilitator-capture'
+        ]);
+
+        const { teamOptions, roleOptions } = buildWhiteCellTimelineFilterOptions(timelineEvents);
+        expect(teamOptions).toEqual(expect.arrayContaining([
+            { value: '', label: 'All Teams' },
+            { value: 'blue', label: 'Blue Team' },
+            { value: 'green', label: 'Green Team' },
+            { value: 'white_cell', label: 'White Cell' }
+        ]));
+        expect(roleOptions).toEqual(expect.arrayContaining([
+            { value: '', label: 'All Roles' },
+            { value: 'facilitator', label: 'Facilitators' },
+            { value: 'notetaker', label: 'Notetakers' },
+            { value: 'whitecell', label: 'White Cell' }
+        ]));
+    });
 });

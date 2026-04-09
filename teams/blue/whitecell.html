@@ -226,6 +226,20 @@
                                     <p class="text-sm text-gray-500" id="participantsSummary">Loading participant roster...</p>
                                 </div>
                             </div>
+                            <div class="section-grid section-grid-2" style="margin-bottom: var(--space-3);">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label" for="participantsTeamFilter">Team Filter</label>
+                                    <select id="participantsTeamFilter" class="form-input form-select" aria-controls="participantsList">
+                                        <option value="">All Teams</option>
+                                    </select>
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label class="form-label" for="participantsRoleFilter">Role Filter</label>
+                                    <select id="participantsRoleFilter" class="form-input form-select" aria-controls="participantsList">
+                                        <option value="">All Roles</option>
+                                    </select>
+                                </div>
+                            </div>
                             <div id="participantsList" class="card-list" aria-live="polite">
                                 <!-- Connected participants will be populated here -->
                             </div>
@@ -332,6 +346,20 @@
                     </div>
 
                     <div class="section-body">
+                        <div class="section-grid section-grid-2" style="margin-bottom: var(--space-4);">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label" for="timelineTeamFilter">Team Filter</label>
+                                <select id="timelineTeamFilter" class="form-input form-select" aria-controls="timelineList">
+                                    <option value="">All Teams</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label" for="timelineRoleFilter">Role Filter</label>
+                                <select id="timelineRoleFilter" class="form-input form-select" aria-controls="timelineList">
+                                    <option value="">All Roles</option>
+                                </select>
+                            </div>
+                        </div>
                         <div id="timelineList" aria-live="polite">
                             <!-- Timeline will be populated here -->
                         </div>

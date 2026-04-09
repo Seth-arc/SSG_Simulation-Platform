@@ -724,7 +724,10 @@ export class FacilitatorController {
                 session_id: sessionId,
                 type: 'ACTION_CREATED',
                 content: `Draft action created: ${action.goal || 'Untitled action'}`,
-                metadata: { related_id: action.id },
+                metadata: {
+                    related_id: action.id,
+                    role: this.role || this.teamContext.facilitatorRole
+                },
                 team: this.teamId,
                 move: action.move ?? 1,
                 phase: action.phase ?? 1
@@ -792,7 +795,10 @@ export class FacilitatorController {
                 session_id: action.session_id,
                 type: 'ACTION_SUBMITTED',
                 content: `Action submitted to White Cell: ${action.goal || 'Untitled action'}`,
-                metadata: { related_id: action.id },
+                metadata: {
+                    related_id: action.id,
+                    role: this.role || this.teamContext.facilitatorRole
+                },
                 team: this.teamId,
                 move: action.move ?? 1,
                 phase: action.phase ?? 1
@@ -1000,7 +1006,10 @@ export class FacilitatorController {
                 session_id: sessionId,
                 type: 'RFI_CREATED',
                 content: `${this.teamLabel} submitted an RFI to White Cell.`,
-                metadata: { related_id: rfi.id },
+                metadata: {
+                    related_id: rfi.id,
+                    role: this.role || this.teamContext.facilitatorRole
+                },
                 team: this.teamId,
                 move: rfi.move ?? 1,
                 phase: rfi.phase ?? 1
@@ -1104,6 +1113,7 @@ export class FacilitatorController {
                 session_id: sessionId,
                 type,
                 content,
+                metadata: { role: this.role || this.teamContext.facilitatorRole },
                 team: this.teamId,
                 move: gameState.move ?? 1,
                 phase: gameState.phase ?? 1

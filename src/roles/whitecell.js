@@ -37,6 +37,29 @@ const WHITE_CELL_ALL_TEAMS_RECIPIENT = 'all';
 const TEAM_LABELS = Object.freeze(
     Object.fromEntries(TEAM_OPTIONS.map((team) => [team.id, team.label]))
 );
+const WHITE_CELL_FILTER_TEAM_ORDER = Object.freeze([
+    ...TEAM_OPTIONS.map((team) => team.id),
+    'white_cell',
+    'observer',
+    'system'
+]);
+const WHITE_CELL_FILTER_ROLE_ORDER = Object.freeze([
+    ROLE_SURFACES.FACILITATOR,
+    ROLE_SURFACES.NOTETAKER,
+    ROLE_SURFACES.WHITECELL,
+    ROLE_SURFACES.VIEWER,
+    'system'
+]);
+const WHITE_CELL_TIMELINE_FACILITATOR_TYPES = Object.freeze([
+    'ACTION_CREATED',
+    'ACTION_SUBMITTED',
+    'RFI_CREATED'
+]);
+const WHITE_CELL_TIMELINE_NOTETAKER_TYPES = Object.freeze([
+    'NOTE',
+    'MOMENT',
+    'QUOTE'
+]);
 
 export const WHITE_CELL_DOM_IDS = [
     'startTimerBtn',
@@ -58,6 +81,8 @@ export const WHITE_CELL_DOM_IDS = [
     'timerStatus',
     'actionsBadge',
     'participantsSummary',
+    'participantsTeamFilter',
+    'participantsRoleFilter',
     'participantsList',
     'actionsList',
     'adjudicationQueue',
@@ -68,6 +93,8 @@ export const WHITE_CELL_DOM_IDS = [
     'commType',
     'commContent',
     'commHistory',
+    'timelineTeamFilter',
+    'timelineRoleFilter',
     'timelineList'
 ];
 
@@ -174,6 +201,21 @@ export function formatWhiteCellParticipantSummary(participants = []) {
     return `${connected} connected / ${total} total participants`;
 }
 
+function sortWhiteCellFilterValues(values = [], orderedValues = []) {
+    return [...values].sort((left, right) => {
+        const leftIndex = orderedValues.indexOf(left);
+        const rightIndex = orderedValues.indexOf(right);
+
+        if (leftIndex !== -1 || rightIndex !== -1) {
+            if (leftIndex === -1) return 1;
+            if (rightIndex === -1) return -1;
+            if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+        }
+
+        return String(left).localeCompare(String(right));
+    });
+}
+
 export function buildWhiteCellCommunicationRecipientOptions() {
     return [
         {
@@ -210,15 +252,225 @@ export function getWhiteCellTeamLabel(team = null) {
     return TEAM_LABELS[team] || team || 'Unknown team';
 }
 
+export function getWhiteCellFilterTeamLabel(team = null) {
+    if (team === 'observer') {
+        return 'Observers';
+    }
+
+    if (team === 'system') {
+        return 'System';
+    }
+
+    return getWhiteCellTeamLabel(team);
+}
+
+export function getWhiteCellRoleFilterValue(role = null) {
+    if (role === 'viewer') {
+        return ROLE_SURFACES.VIEWER;
+    }
+
+    const parsedRole = parseTeamRole(role);
+    return parsedRole.surface || null;
+}
+
+export function getWhiteCellFilterRoleLabel(role = null) {
+    const labels = {
+        [ROLE_SURFACES.FACILITATOR]: 'Facilitators',
+        [ROLE_SURFACES.NOTETAKER]: 'Notetakers',
+        [ROLE_SURFACES.WHITECELL]: 'White Cell',
+        [ROLE_SURFACES.VIEWER]: 'Observers',
+        system: 'System'
+    };
+
+    return labels[role] || role || 'Unknown role';
+}
+
+export function getWhiteCellParticipantTeamFilterValue(participant = {}) {
+    if (participant.role === 'viewer') {
+        return 'observer';
+    }
+
+    const parsedRole = parseTeamRole(participant.role);
+    return participant.team || participant.team_id || parsedRole.teamId || null;
+}
+
+export function buildWhiteCellParticipantFilterOptions(participants = []) {
+    const teamValues = new Set();
+    const roleValues = new Set();
+
+    participants.forEach((participant) => {
+        const teamValue = getWhiteCellParticipantTeamFilterValue(participant);
+        const roleValue = getWhiteCellRoleFilterValue(participant.role);
+
+        if (teamValue) {
+            teamValues.add(teamValue);
+        }
+
+        if (roleValue) {
+            roleValues.add(roleValue);
+        }
+    });
+
+    return {
+        teamOptions: [
+            { value: '', label: 'All Teams' },
+            ...sortWhiteCellFilterValues(teamValues, WHITE_CELL_FILTER_TEAM_ORDER).map((value) => ({
+                value,
+                label: getWhiteCellFilterTeamLabel(value)
+            }))
+        ],
+        roleOptions: [
+            { value: '', label: 'All Roles' },
+            ...sortWhiteCellFilterValues(roleValues, WHITE_CELL_FILTER_ROLE_ORDER).map((value) => ({
+                value,
+                label: getWhiteCellFilterRoleLabel(value)
+            }))
+        ]
+    };
+}
+
+export function filterWhiteCellParticipants(participants = [], {
+    team = null,
+    role = null
+} = {}) {
+    return participants.filter((participant) => {
+        const participantTeam = getWhiteCellParticipantTeamFilterValue(participant);
+        const participantRole = getWhiteCellRoleFilterValue(participant.role);
+
+        if (team && participantTeam !== team) {
+            return false;
+        }
+
+        if (role && participantRole !== role) {
+            return false;
+        }
+
+        return true;
+    });
+}
+
+function resolveWhiteCellTimelineMetadataRole(event = {}) {
+    const metadata = event?.metadata && typeof event.metadata === 'object'
+        ? event.metadata
+        : {};
+
+    return (
+        metadata.role
+        || metadata.operator_role
+        || metadata.answered_by_role
+        || metadata.adjudicated_by_role
+        || metadata.participant_role
+        || event.role
+        || null
+    );
+}
+
+export function getWhiteCellTimelineRoleFilterValue(event = {}) {
+    const explicitRole = getWhiteCellRoleFilterValue(resolveWhiteCellTimelineMetadataRole(event));
+    if (explicitRole) {
+        return explicitRole;
+    }
+
+    const eventType = event.type || event.event_type || null;
+    const actor = String(event?.metadata?.actor || '').toLowerCase();
+
+    if (event.team === 'white_cell') {
+        return ROLE_SURFACES.WHITECELL;
+    }
+
+    if (WHITE_CELL_TIMELINE_FACILITATOR_TYPES.includes(eventType)) {
+        return ROLE_SURFACES.FACILITATOR;
+    }
+
+    if (WHITE_CELL_TIMELINE_NOTETAKER_TYPES.includes(eventType)) {
+        if (actor.includes('facilitator')) {
+            return ROLE_SURFACES.FACILITATOR;
+        }
+
+        if (
+            actor.includes('notetaker')
+            || event?.metadata?.source === 'notetaker_save'
+            || event?.metadata?.note_scope
+        ) {
+            return ROLE_SURFACES.NOTETAKER;
+        }
+    }
+
+    return null;
+}
+
+export function buildWhiteCellTimelineFilterOptions(events = []) {
+    const teamValues = new Set();
+    const roleValues = new Set();
+
+    events.forEach((event) => {
+        const teamValue = event.team || null;
+        const roleValue = getWhiteCellTimelineRoleFilterValue(event);
+
+        if (teamValue) {
+            teamValues.add(teamValue);
+        }
+
+        if (roleValue) {
+            roleValues.add(roleValue);
+        }
+    });
+
+    return {
+        teamOptions: [
+            { value: '', label: 'All Teams' },
+            ...sortWhiteCellFilterValues(teamValues, WHITE_CELL_FILTER_TEAM_ORDER).map((value) => ({
+                value,
+                label: getWhiteCellFilterTeamLabel(value)
+            }))
+        ],
+        roleOptions: [
+            { value: '', label: 'All Roles' },
+            ...sortWhiteCellFilterValues(roleValues, WHITE_CELL_FILTER_ROLE_ORDER).map((value) => ({
+                value,
+                label: getWhiteCellFilterRoleLabel(value)
+            }))
+        ]
+    };
+}
+
+export function filterWhiteCellTimelineEvents(events = [], {
+    team = null,
+    role = null
+} = {}) {
+    return events.filter((event) => {
+        const timelineRole = getWhiteCellTimelineRoleFilterValue(event);
+
+        if (team && event.team !== team) {
+            return false;
+        }
+
+        if (role && timelineRole !== role) {
+            return false;
+        }
+
+        return true;
+    });
+}
+
 export class WhiteCellController {
     constructor() {
         this.actions = [];
         this.rfis = [];
         this.communications = [];
         this.participants = [];
+        this.timelineEvents = [];
         this.storeUnsubscribers = [];
         this.currentTimerSeconds = CONFIG.DEFAULT_TIMER_SECONDS;
         this.timerRunning = false;
+        this.participantFilters = {
+            team: null,
+            role: null
+        };
+        this.timelineFilters = {
+            team: null,
+            role: null
+        };
         this.teamContext = resolveTeamContext();
         this.teamId = this.teamContext.teamId;
         this.operatorRole = WHITE_CELL_OPERATOR_ROLES.LEAD;
@@ -313,6 +565,16 @@ export class WhiteCellController {
         return this.operatorRole !== WHITE_CELL_OPERATOR_ROLES.SUPPORT;
     }
 
+    getTimelineActorRole() {
+        return (
+            sessionStore.getRole()
+            || sessionStore.getSessionData()?.role
+            || (this.isLeadOperator()
+                ? this.teamContext.whitecellLeadRole
+                : this.teamContext.whitecellSupportRole)
+        );
+    }
+
     bindEventListeners() {
         const startTimerBtn = document.getElementById('startTimerBtn');
         const pauseTimerBtn = document.getElementById('pauseTimerBtn');
@@ -322,6 +584,10 @@ export class WhiteCellController {
         const prevMoveBtn = document.getElementById('prevMoveBtn');
         const nextMoveBtn = document.getElementById('nextMoveBtn');
         const commForm = document.getElementById('commForm');
+        const participantsTeamFilter = document.getElementById('participantsTeamFilter');
+        const participantsRoleFilter = document.getElementById('participantsRoleFilter');
+        const timelineTeamFilter = document.getElementById('timelineTeamFilter');
+        const timelineRoleFilter = document.getElementById('timelineRoleFilter');
 
         if (this.isLeadOperator()) {
             startTimerBtn?.addEventListener('click', () => this.startTimer());
@@ -349,6 +615,22 @@ export class WhiteCellController {
         }
 
         commForm?.addEventListener('submit', (event) => this.handleCommunicationSubmit(event));
+        participantsTeamFilter?.addEventListener('change', (event) => {
+            this.participantFilters.team = event.currentTarget.value || null;
+            this.renderParticipants();
+        });
+        participantsRoleFilter?.addEventListener('change', (event) => {
+            this.participantFilters.role = event.currentTarget.value || null;
+            this.renderParticipants();
+        });
+        timelineTeamFilter?.addEventListener('change', (event) => {
+            this.timelineFilters.team = event.currentTarget.value || null;
+            this.renderTimeline();
+        });
+        timelineRoleFilter?.addEventListener('change', (event) => {
+            this.timelineFilters.role = event.currentTarget.value || null;
+            this.renderTimeline();
+        });
     }
 
     subscribeToLiveData() {
@@ -547,6 +829,7 @@ export class WhiteCellController {
                 session_id: sessionId,
                 type: 'PHASE_CHANGE',
                 content: `Phase advanced from ${currentPhase} to ${updatedState.phase}`,
+                metadata: { role: this.getTimelineActorRole() },
                 team: 'white_cell',
                 move: currentMove,
                 phase: updatedState.phase
@@ -597,6 +880,7 @@ export class WhiteCellController {
                 session_id: sessionId,
                 type: 'PHASE_CHANGE',
                 content: `Phase moved back from ${currentPhase} to ${updatedState.phase}`,
+                metadata: { role: this.getTimelineActorRole() },
                 team: 'white_cell',
                 move: currentMove,
                 phase: updatedState.phase
@@ -646,6 +930,7 @@ export class WhiteCellController {
                 session_id: sessionId,
                 type: 'MOVE_CHANGE',
                 content: `Move advanced from ${currentMove} to ${updatedState.move}`,
+                metadata: { role: this.getTimelineActorRole() },
                 team: 'white_cell',
                 move: updatedState.move,
                 phase: updatedState.phase
@@ -695,6 +980,7 @@ export class WhiteCellController {
                 session_id: sessionId,
                 type: 'MOVE_CHANGE',
                 content: `Move returned from ${currentMove} to ${updatedState.move}`,
+                metadata: { role: this.getTimelineActorRole() },
                 team: 'white_cell',
                 move: updatedState.move,
                 phase: updatedState.phase
@@ -925,7 +1211,10 @@ export class WhiteCellController {
                 session_id: sessionStore.getSessionId(),
                 type: 'ACTION_ADJUDICATED',
                 content: `Action adjudicated: ${outcome}`,
-                metadata: { related_id: actionId },
+                metadata: {
+                    related_id: actionId,
+                    role: this.getTimelineActorRole()
+                },
                 team: 'white_cell',
                 move: gameState.move ?? 1,
                 phase: gameState.phase ?? 1
@@ -1060,7 +1349,10 @@ export class WhiteCellController {
                 session_id: sessionStore.getSessionId(),
                 type: 'RFI_ANSWERED',
                 content: 'White Cell responded to an RFI.',
-                metadata: { related_id: rfiId },
+                metadata: {
+                    related_id: rfiId,
+                    role: this.getTimelineActorRole()
+                },
                 team: 'white_cell',
                 move: gameState.move ?? 1,
                 phase: gameState.phase ?? 1
@@ -1111,6 +1403,7 @@ export class WhiteCellController {
                 session_id: sessionId,
                 type,
                 content: `White Cell ${type.toLowerCase()} sent to ${this.formatCommunicationRecipient(recipient)}`,
+                metadata: { role: this.getTimelineActorRole() },
                 team: 'white_cell',
                 move: gameState.move ?? 1,
                 phase: gameState.phase ?? 1
@@ -1137,7 +1430,20 @@ export class WhiteCellController {
 
     syncParticipantsFromStore() {
         this.participants = buildWhiteCellParticipantRoster(participantsStore.getAll());
+        this.configureParticipantFilters();
         this.renderParticipants();
+    }
+
+    configureParticipantFilters() {
+        const teamSelect = document.getElementById('participantsTeamFilter');
+        const roleSelect = document.getElementById('participantsRoleFilter');
+        if (!teamSelect || !roleSelect) return;
+
+        const { teamOptions, roleOptions } = buildWhiteCellParticipantFilterOptions(this.participants);
+        this.populateFilterSelect(teamSelect, teamOptions, this.participantFilters.team);
+        this.populateFilterSelect(roleSelect, roleOptions, this.participantFilters.role);
+        this.participantFilters.team = teamSelect.value || null;
+        this.participantFilters.role = roleSelect.value || null;
     }
 
     renderParticipants() {
@@ -1145,14 +1451,22 @@ export class WhiteCellController {
         const container = document.getElementById('participantsList');
         if (!summary || !container) return;
 
-        summary.textContent = formatWhiteCellParticipantSummary(this.participants);
+        const filteredParticipants = filterWhiteCellParticipants(this.participants, this.participantFilters);
+        const hasActiveFilters = Boolean(this.participantFilters.team || this.participantFilters.role);
+        const filteredSummary = filteredParticipants.length === 0 && this.participants.length > 0 && hasActiveFilters
+            ? 'No participants match the current filters.'
+            : formatWhiteCellParticipantSummary(filteredParticipants);
 
-        if (this.participants.length === 0) {
-            container.innerHTML = '<p class="text-sm text-gray-500">No facilitator, notetaker, observer, or White Cell seats are connected in this session yet.</p>';
+        summary.textContent = filteredSummary;
+
+        if (filteredParticipants.length === 0) {
+            container.innerHTML = hasActiveFilters
+                ? '<p class="text-sm text-gray-500">No participants match the selected team and role filters.</p>'
+                : '<p class="text-sm text-gray-500">No facilitator, notetaker, observer, or White Cell seats are connected in this session yet.</p>';
             return;
         }
 
-        container.innerHTML = this.participants.map((participant) => {
+        container.innerHTML = filteredParticipants.map((participant) => {
             const connectionBadge = createBadge({
                 text: isConnectedParticipant(participant) ? 'Connected' : 'Inactive',
                 variant: isConnectedParticipant(participant) ? 'success' : 'default',
@@ -1219,19 +1533,53 @@ export class WhiteCellController {
     }
 
     syncTimelineFromStore() {
-        this.renderTimeline(timelineStore.getAll());
+        this.timelineEvents = timelineStore.getAll();
+        this.configureTimelineFilters();
+        this.renderTimeline();
     }
 
-    renderTimeline(events) {
-        const container = document.getElementById('timelineList');
-        if (!container) return;
+    configureTimelineFilters() {
+        const teamSelect = document.getElementById('timelineTeamFilter');
+        const roleSelect = document.getElementById('timelineRoleFilter');
+        if (!teamSelect || !roleSelect) return;
 
-        if (events.length === 0) {
-            container.innerHTML = '<p class="text-sm text-gray-500">No events yet.</p>';
+        const { teamOptions, roleOptions } = buildWhiteCellTimelineFilterOptions(this.timelineEvents);
+        this.populateFilterSelect(teamSelect, teamOptions, this.timelineFilters.team);
+        this.populateFilterSelect(roleSelect, roleOptions, this.timelineFilters.role);
+        this.timelineFilters.team = teamSelect.value || null;
+        this.timelineFilters.role = roleSelect.value || null;
+    }
+
+    populateFilterSelect(selectElement, options, currentValue) {
+        if (!selectElement) {
             return;
         }
 
-        container.innerHTML = events.slice(0, 50).map((event) => {
+        const normalizedValue = currentValue || '';
+        selectElement.innerHTML = options.map((option) => (
+            `<option value="${option.value}">${this.escapeHtml(option.label)}</option>`
+        )).join('');
+
+        selectElement.value = options.some((option) => option.value === normalizedValue)
+            ? normalizedValue
+            : '';
+    }
+
+    renderTimeline() {
+        const container = document.getElementById('timelineList');
+        if (!container) return;
+
+        const filteredEvents = filterWhiteCellTimelineEvents(this.timelineEvents, this.timelineFilters);
+        const hasActiveFilters = Boolean(this.timelineFilters.team || this.timelineFilters.role);
+
+        if (filteredEvents.length === 0) {
+            container.innerHTML = hasActiveFilters
+                ? '<p class="text-sm text-gray-500">No timeline events match the selected team and role filters.</p>'
+                : '<p class="text-sm text-gray-500">No events yet.</p>';
+            return;
+        }
+
+        container.innerHTML = filteredEvents.slice(0, 50).map((event) => {
             const eventType = event.type || event.event_type || 'EVENT';
             const eventContent = event.content || event.description || '';
 

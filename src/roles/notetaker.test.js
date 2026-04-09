@@ -197,6 +197,7 @@ describe('Notetaker move-scoped view state', () => {
             phase: 3,
             metadata: {
                 actor: 'Morgan',
+                role: 'blue_notetaker',
                 source: NOTETAKER_TIMELINE_EVENT_SOURCE,
                 note_scope: 'dynamics',
                 participant_key: 'seat-blue-1',
