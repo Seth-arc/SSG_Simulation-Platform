@@ -816,7 +816,6 @@ BEGIN
     IF auth.uid() IS NULL
        OR participant_role IS NULL
        OR public.live_demo_participant_surface(action_row.session_id) <> 'whitecell'
-       OR participant_team <> LOWER(BTRIM(action_row.team))
        OR NOT public.live_demo_has_operator_grant('whitecell', action_row.session_id, participant_team, participant_role) THEN
         RAISE EXCEPTION 'White Cell operator authorization is required.'
             USING ERRCODE = '42501';
@@ -914,7 +913,6 @@ BEGIN
     IF auth.uid() IS NULL
        OR participant_role IS NULL
        OR public.live_demo_participant_surface(request_row.session_id) <> 'whitecell'
-       OR participant_team <> LOWER(BTRIM(request_row.team))
        OR NOT public.live_demo_has_operator_grant('whitecell', request_row.session_id, participant_team, participant_role) THEN
         RAISE EXCEPTION 'White Cell operator authorization is required.'
             USING ERRCODE = '42501';
@@ -1009,13 +1007,17 @@ BEGIN
 
     IF normalized_to_role NOT IN (
         'all',
-        participant_team,
-        participant_team || '_facilitator',
-        participant_team || '_notetaker',
-        participant_team || '_whitecell_lead',
-        participant_team || '_whitecell_support'
+        'blue',
+        'red',
+        'green',
+        'blue_facilitator',
+        'red_facilitator',
+        'green_facilitator',
+        'blue_notetaker',
+        'red_notetaker',
+        'green_notetaker'
     ) THEN
-        RAISE EXCEPTION 'White Cell communications are limited to the operator team context.'
+        RAISE EXCEPTION 'White Cell communications are limited to supported live-demo recipients.'
             USING ERRCODE = '42501';
     END IF;
 

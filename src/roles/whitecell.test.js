@@ -143,8 +143,8 @@ describe('White Cell DOM contract', () => {
         });
     });
 
-    it('keeps the visible participant roster scoped to the current team roles', async () => {
-        const { buildWhiteCellParticipantRoster } = await loadWhiteCellModule();
+    it('includes all team seats in the White Cell participant roster while excluding Game Master', async () => {
+        const { buildWhiteCellParticipantRoster, formatWhiteCellParticipantSummary } = await loadWhiteCellModule();
 
         const roster = buildWhiteCellParticipantRoster([
             {
@@ -160,6 +160,13 @@ describe('White Cell DOM contract', () => {
                 display_name: 'Priya',
                 is_active: true,
                 heartbeat_at: '2026-04-08T10:06:00.000Z'
+            },
+            {
+                id: 'green-notetaker',
+                role: 'green_notetaker',
+                display_name: 'Chris',
+                is_active: true,
+                heartbeat_at: '2026-04-08T10:03:00.000Z'
             },
             {
                 id: 'blue-whitecell',
@@ -182,12 +189,29 @@ describe('White Cell DOM contract', () => {
                 is_active: true,
                 heartbeat_at: '2026-04-08T10:07:00.000Z'
             }
-        ], 'blue');
+        ]);
 
         expect(roster.map((participant) => participant.id)).toEqual([
+            'red-facilitator',
             'blue-facilitator',
             'blue-whitecell',
+            'green-notetaker',
             'observer-1'
         ]);
+        expect(formatWhiteCellParticipantSummary(roster)).toBe('4 connected / 5 total participants');
+    });
+
+    it('builds cross-team White Cell communication recipients', async () => {
+        const { buildWhiteCellCommunicationRecipientOptions } = await loadWhiteCellModule();
+
+        expect(buildWhiteCellCommunicationRecipientOptions()).toEqual(expect.arrayContaining([
+            { value: 'all', label: 'All Teams' },
+            { value: 'blue', label: 'Blue Team' },
+            { value: 'red', label: 'Red Team' },
+            { value: 'green', label: 'Green Team' },
+            { value: 'blue_facilitator', label: 'Blue Team Facilitator' },
+            { value: 'red_notetaker', label: 'Red Team Notetaker' },
+            { value: 'green_facilitator', label: 'Green Team Facilitator' }
+        ]));
     });
 });

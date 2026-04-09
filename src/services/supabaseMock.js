@@ -1021,7 +1021,7 @@ function operatorAdjudicateAction(state, params) {
         return { data: null, error: { message: 'Action not found.' } };
     }
 
-    if (!grant || grant.session_id !== action.session_id || grant.team_id !== action.team) {
+    if (!grant || grant.session_id !== action.session_id) {
         return { data: null, error: { message: 'White Cell operator authorization is required.' } };
     }
 
@@ -1057,7 +1057,7 @@ function operatorAnswerRequest(state, params) {
         return { data: null, error: { message: 'Request not found.' } };
     }
 
-    if (!grant || grant.session_id !== request.session_id || grant.team_id !== request.team) {
+    if (!grant || grant.session_id !== request.session_id) {
         return { data: null, error: { message: 'White Cell operator authorization is required.' } };
     }
 

@@ -360,6 +360,97 @@ describe('database live-demo seat contract', () => {
         ]);
     });
 
+    it('lets a White Cell operator review and respond across all teams in the session', async () => {
+        const { sessionStore, database } = await loadModules();
+
+        setClientIdentity(sessionStore, 'client-gm-cross-team');
+        await database.authorizeOperatorAccess({
+            surface: 'gamemaster',
+            accessCode: 'admin2025',
+            operatorName: 'GM Cross-Team'
+        });
+
+        const session = await database.createSession({
+            name: 'Cross-Team White Cell Session',
+            session_code: 'WHTE2026'
+        });
+
+        setClientIdentity(sessionStore, 'client-red-fac');
+        await database.claimParticipantSeat(session.id, 'red_facilitator', 'Red Facilitator');
+        const createdAction = await database.createAction({
+            session_id: session.id,
+            client_id: sessionStore.getClientId(),
+            move: 1,
+            phase: 1,
+            team: 'red',
+            mechanism: 'export',
+            sector: 'semiconductors',
+            exposure_type: 'Technology',
+            targets: ['PRC'],
+            goal: 'Red team action',
+            expected_outcomes: 'Pressure the opposing bloc.',
+            ally_contingencies: 'Coordinate with partners first.',
+            priority: 'HIGH'
+        });
+        const submittedAction = await database.submitAction(createdAction.id);
+        const createdRequest = await database.createRequest({
+            session_id: session.id,
+            team: 'red',
+            client_id: sessionStore.getClientId(),
+            move: 1,
+            phase: 1,
+            priority: 'HIGH',
+            categories: ['Economic Impact'],
+            query: 'What is the latest assessment from White Cell?'
+        });
+
+        setClientIdentity(sessionStore, 'client-blue-whitecell');
+        await database.authorizeOperatorAccess({
+            surface: 'whitecell',
+            accessCode: 'admin2025',
+            sessionId: session.id,
+            teamId: 'blue',
+            role: 'blue_whitecell_lead',
+            operatorName: 'Blue White Cell Lead'
+        });
+        await database.claimParticipantSeat(session.id, 'blue_whitecell_lead', 'Blue White Cell Lead');
+
+        const adjudicatedAction = await database.adjudicateAction(submittedAction.id, {
+            outcome: 'SUCCESS',
+            adjudication_notes: 'Reviewed from the central White Cell desk.'
+        });
+        const answeredRequest = await database.updateRequest(createdRequest.id, {
+            response: 'White Cell response for all teams.',
+            status: 'answered'
+        });
+        const communication = await database.createCommunication({
+            session_id: session.id,
+            from_role: 'white_cell',
+            to_role: 'green',
+            type: 'INJECT',
+            content: 'Cross-team inject from White Cell.'
+        });
+
+        expect(adjudicatedAction).toMatchObject({
+            id: submittedAction.id,
+            team: 'red',
+            status: 'adjudicated',
+            outcome: 'SUCCESS'
+        });
+        expect(answeredRequest).toMatchObject({
+            id: createdRequest.id,
+            team: 'red',
+            status: 'answered',
+            response: 'White Cell response for all teams.'
+        });
+        expect(communication).toMatchObject({
+            session_id: session.id,
+            from_role: 'white_cell',
+            to_role: 'green',
+            type: 'INJECT'
+        });
+    });
+
     it('applies stale-seat heartbeat recovery to every shipped live-demo role across all teams', async () => {
         const { sessionStore, database } = await loadModules();
 

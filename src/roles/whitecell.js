@@ -23,13 +23,20 @@ import { ENUMS, canAdjudicateAction } from '../core/enums.js';
 import { navigateToApp } from '../core/navigation.js';
 import {
     OPERATOR_SURFACES,
+    ROLE_SURFACES,
+    TEAM_OPTIONS,
     WHITE_CELL_OPERATOR_ROLES,
+    buildTeamRole,
     getRoleDisplayName,
     parseTeamRole,
     resolveTeamContext
 } from '../core/teamContext.js';
 
 const logger = createLogger('WhiteCell');
+const WHITE_CELL_ALL_TEAMS_RECIPIENT = 'all';
+const TEAM_LABELS = Object.freeze(
+    Object.fromEntries(TEAM_OPTIONS.map((team) => [team.id, team.label]))
+);
 
 export const WHITE_CELL_DOM_IDS = [
     'startTimerBtn',
@@ -121,20 +128,22 @@ export function isWhiteCellVisibleParticipant(participant = {}, teamId = null) {
         return false;
     }
 
-    if (!teamId) {
-        return true;
+    if (participant.role === 'white') {
+        return false;
     }
 
-    if (participant.team === teamId || participant.team_id === teamId) {
-        return true;
+    const parsedRole = parseTeamRole(participant.role);
+    const participantTeam = participant.team || participant.team_id || parsedRole.teamId || null;
+
+    if (!teamId) {
+        return participant.role === 'viewer' || Boolean(parsedRole.surface);
     }
 
     if (participant.role === 'viewer') {
         return true;
     }
 
-    const parsedRole = parseTeamRole(participant.role);
-    return parsedRole.teamId === teamId;
+    return participantTeam === teamId;
 }
 
 export function buildWhiteCellParticipantRoster(participants = [], teamId = null) {
@@ -155,7 +164,7 @@ export function formatWhiteCellParticipantSummary(participants = []) {
     const connected = participants.filter((participant) => isConnectedParticipant(participant)).length;
 
     if (total === 0) {
-        return 'No participants have joined this team yet.';
+        return 'No participants have joined this session yet.';
     }
 
     if (connected === total) {
@@ -163,6 +172,42 @@ export function formatWhiteCellParticipantSummary(participants = []) {
     }
 
     return `${connected} connected / ${total} total participants`;
+}
+
+export function buildWhiteCellCommunicationRecipientOptions() {
+    return [
+        {
+            value: WHITE_CELL_ALL_TEAMS_RECIPIENT,
+            label: 'All Teams'
+        },
+        ...TEAM_OPTIONS.flatMap((team) => {
+            const facilitatorRole = buildTeamRole(team.id, ROLE_SURFACES.FACILITATOR);
+            const notetakerRole = buildTeamRole(team.id, ROLE_SURFACES.NOTETAKER);
+
+            return [
+                {
+                    value: team.id,
+                    label: team.label
+                },
+                {
+                    value: facilitatorRole,
+                    label: getRoleDisplayName(facilitatorRole)
+                },
+                {
+                    value: notetakerRole,
+                    label: getRoleDisplayName(notetakerRole)
+                }
+            ];
+        })
+    ];
+}
+
+export function getWhiteCellTeamLabel(team = null) {
+    if (team === 'white_cell') {
+        return 'White Cell';
+    }
+
+    return TEAM_LABELS[team] || team || 'Unknown team';
 }
 
 export class WhiteCellController {
@@ -176,7 +221,6 @@ export class WhiteCellController {
         this.timerRunning = false;
         this.teamContext = resolveTeamContext();
         this.teamId = this.teamContext.teamId;
-        this.teamLabel = this.teamContext.teamLabel;
         this.operatorRole = WHITE_CELL_OPERATOR_ROLES.LEAD;
     }
 
@@ -242,12 +286,27 @@ export class WhiteCellController {
         const recipientSelect = document.getElementById('commRecipient');
         if (headerTitle) {
             headerTitle.textContent = this.isLeadOperator()
-                ? this.teamContext.whitecellLeadLabel
-                : this.teamContext.whitecellSupportLabel;
+                ? 'White Cell Lead'
+                : 'White Cell Support';
         }
-        if (recipientSelect && Array.from(recipientSelect.options).some((option) => option.value === this.teamId)) {
-            recipientSelect.value = this.teamId;
+        if (recipientSelect) {
+            this.configureCommunicationRecipients(recipientSelect);
         }
+    }
+
+    configureCommunicationRecipients(recipientSelect) {
+        const currentValue = recipientSelect.value || WHITE_CELL_ALL_TEAMS_RECIPIENT;
+        const options = buildWhiteCellCommunicationRecipientOptions();
+
+        recipientSelect.innerHTML = options.map((option) => (
+            `<option value="${option.value}">${this.escapeHtml(option.label)}</option>`
+        )).join('');
+
+        const resolvedValue = options.some((option) => option.value === currentValue)
+            ? currentValue
+            : WHITE_CELL_ALL_TEAMS_RECIPIENT;
+
+        recipientSelect.value = resolvedValue;
     }
 
     isLeadOperator() {
@@ -653,8 +712,7 @@ export class WhiteCellController {
     }
 
     syncActionsFromStore() {
-        this.actions = actionsStore.getByTeam(this.teamId)
-            .filter((action) => action.status === ENUMS.ACTION_STATUS.SUBMITTED);
+        this.actions = actionsStore.getPending();
 
         this.renderActionReview();
         this.renderAdjudicationQueue();
@@ -885,8 +943,7 @@ export class WhiteCellController {
     }
 
     syncRfisFromStore() {
-        this.rfis = requestsStore.getByTeam(this.teamId)
-            .filter((request) => request.status === 'pending');
+        this.rfis = requestsStore.getPending();
 
         this.renderRfiQueue();
 
@@ -1061,7 +1118,7 @@ export class WhiteCellController {
             timelineStore.updateFromServer('INSERT', timelineEvent);
 
             form.reset();
-            document.getElementById('commRecipient').value = this.teamId;
+            document.getElementById('commRecipient').value = WHITE_CELL_ALL_TEAMS_RECIPIENT;
             document.getElementById('commType').value = 'INJECT';
 
             showToast({ message: 'Communication sent', type: 'success' });
@@ -1074,20 +1131,12 @@ export class WhiteCellController {
     }
 
     syncCommunicationsFromStore() {
-        const allowedRecipients = new Set([
-            this.teamId,
-            this.teamContext.facilitatorRole,
-            this.teamContext.notetakerRole,
-            this.teamContext.whitecellLeadRole,
-            this.teamContext.whitecellSupportRole,
-            this.teamContext.whitecellRole
-        ]);
-        this.communications = communicationsStore.getByRecipients(allowedRecipients);
+        this.communications = communicationsStore.getAll();
         this.renderCommunicationHistory();
     }
 
     syncParticipantsFromStore() {
-        this.participants = buildWhiteCellParticipantRoster(participantsStore.getAll(), this.teamId);
+        this.participants = buildWhiteCellParticipantRoster(participantsStore.getAll());
         this.renderParticipants();
     }
 
@@ -1099,7 +1148,7 @@ export class WhiteCellController {
         summary.textContent = formatWhiteCellParticipantSummary(this.participants);
 
         if (this.participants.length === 0) {
-            container.innerHTML = '<p class="text-sm text-gray-500">No facilitator, notetaker, observer, or White Cell seats are connected for this team yet.</p>';
+            container.innerHTML = '<p class="text-sm text-gray-500">No facilitator, notetaker, observer, or White Cell seats are connected in this session yet.</p>';
             return;
         }
 
@@ -1111,7 +1160,7 @@ export class WhiteCellController {
                 rounded: true
             }).outerHTML;
             const roleBadge = createRoleBadge(participant.role || 'unknown').outerHTML;
-            const roleLabel = getRoleDisplayName(participant.role, { observerTeamId: this.teamId }) || participant.role || 'Unknown role';
+            const roleLabel = getRoleDisplayName(participant.role) || participant.role || 'Unknown role';
             const lastActiveAt = participant.heartbeat_at || participant.last_seen || participant.joined_at;
 
             return `
@@ -1158,22 +1207,19 @@ export class WhiteCellController {
     }
 
     formatCommunicationRecipient(recipient) {
-        const labels = {
-            [this.teamId]: this.teamLabel,
-            [this.teamContext.facilitatorRole]: this.teamContext.facilitatorLabel,
-            [this.teamContext.notetakerRole]: this.teamContext.notetakerLabel,
-            [this.teamContext.whitecellLeadRole]: this.teamContext.whitecellLeadLabel,
-            [this.teamContext.whitecellSupportRole]: this.teamContext.whitecellSupportLabel,
-            [this.teamContext.whitecellRole]: this.teamContext.whitecellLabel
-        };
+        if (recipient === WHITE_CELL_ALL_TEAMS_RECIPIENT) {
+            return 'All Teams';
+        }
 
-        return labels[recipient] || recipient || 'Unknown recipient';
+        if (TEAM_LABELS[recipient]) {
+            return getWhiteCellTeamLabel(recipient);
+        }
+
+        return getRoleDisplayName(recipient) || recipient || 'Unknown recipient';
     }
 
     syncTimelineFromStore() {
-        const relevantEvents = timelineStore.getAll()
-            .filter((event) => [this.teamId, 'white_cell'].includes(event.team));
-        this.renderTimeline(relevantEvents);
+        this.renderTimeline(timelineStore.getAll());
     }
 
     renderTimeline(events) {
@@ -1206,15 +1252,7 @@ export class WhiteCellController {
     }
 
     formatTeamLabel(team) {
-        if (team === this.teamId) {
-            return this.teamLabel;
-        }
-
-        if (team === 'white_cell') {
-            return 'White Cell';
-        }
-
-        return team || 'Unknown team';
+        return getWhiteCellTeamLabel(team);
     }
 
     escapeHtml(value) {
