@@ -383,5 +383,99 @@ describe('White Cell DOM contract', () => {
         expect(markup).toContain('Exposure:</strong> Overt');
         expect(markup).toContain('Ally Contingencies:</strong> Coordinate with customs union partners.');
         expect(markup).toContain('Submitted:</strong>');
+        expect(markup).toContain('Send to Red Team');
+    });
+
+    it('only renders the Red-team share shortcut for Blue-team actions', async () => {
+        const { WhiteCellController } = await loadWhiteCellModule();
+        global.document = createFakeDocument();
+        const controller = new WhiteCellController();
+
+        const blueMarkup = controller.renderActionCard({
+            id: 'action-blue',
+            goal: 'Stabilize port access',
+            mechanism: 'Diplomatic pressure',
+            team: 'blue'
+        });
+        const redMarkup = controller.renderActionCard({
+            id: 'action-red',
+            goal: 'Restrict shipping access',
+            mechanism: 'Tariff threat',
+            team: 'red'
+        });
+
+        expect(blueMarkup).toContain('Send to Red Team');
+        expect(redMarkup).not.toContain('Send to Red Team');
+    });
+
+    it('builds the Blue-action share payload for Red Team', async () => {
+        const { WhiteCellController } = await loadWhiteCellModule();
+        const controller = new WhiteCellController();
+        controller.actions = [
+            {
+                id: 'action-77',
+                goal: 'Stabilize port access',
+                mechanism: 'Diplomatic pressure',
+                team: 'blue',
+                move: 2,
+                phase: 3,
+                targets: ['Port Authority'],
+                sector: 'Logistics',
+                exposure_type: 'Overt',
+                expected_outcomes: 'Secure a 72-hour shipping corridor.',
+                ally_contingencies: 'Coordinate with customs union partners.'
+            }
+        ];
+        controller.sendCommunication = vi.fn().mockResolvedValue(true);
+
+        await controller.shareActionWithConfiguredTarget('action-77');
+
+        expect(controller.sendCommunication).toHaveBeenCalledWith(expect.objectContaining({
+            recipient: 'red',
+            type: 'GUIDANCE',
+            loaderMessage: 'Sharing action...',
+            successMessage: 'Blue Team action shared with Red Team',
+            errorMessage: 'Failed to share action',
+            timelineContent: 'White Cell shared Blue Team action with Red Team'
+        }));
+
+        const [payload] = controller.sendCommunication.mock.calls[0];
+        expect(payload.metadata).toMatchObject({
+            related_id: 'action-77',
+            shared_action_id: 'action-77',
+            shared_action_team: 'blue'
+        });
+        expect(payload.content).toContain('White Cell is sharing a Blue Team action with Red Team.');
+        expect(payload.content).toContain('Action: Stabilize port access');
+        expect(payload.content).toContain('Targets: Port Authority');
+        expect(payload.content).toContain('Expected Outcomes: Secure a 72-hour shipping corridor.');
+    });
+
+    it('binds the action share shortcut to the White Cell share handler', async () => {
+        const { WhiteCellController } = await loadWhiteCellModule();
+        const shareButton = {
+            dataset: { actionId: 'action-77' },
+            listeners: {},
+            addEventListener(type, callback) {
+                this.listeners[type] = callback;
+            }
+        };
+        const container = {
+            querySelectorAll(selector) {
+                if (selector === '.share-action-btn') {
+                    return [shareButton];
+                }
+
+                return [];
+            }
+        };
+
+        const controller = new WhiteCellController();
+        controller.shareActionWithConfiguredTarget = vi.fn().mockResolvedValue(true);
+
+        controller.bindActionCardButtons(container);
+        shareButton.listeners.click();
+
+        expect(controller.shareActionWithConfiguredTarget).toHaveBeenCalledWith('action-77');
     });
 });
