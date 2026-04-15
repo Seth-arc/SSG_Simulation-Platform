@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const FACILITATOR_HTML_PATH = new URL('../../teams/blue/facilitator.html', import.meta.url);
+const GREEN_FACILITATOR_HTML_PATH = new URL('../../teams/green/facilitator.html', import.meta.url);
 
 const showToast = vi.fn();
 const showModal = vi.fn();
@@ -121,6 +122,13 @@ describe('Facilitator observer enforcement', () => {
         expect(html).toContain('id="tribeStreetJournalSection"');
         expect(html).toContain('Tribe Street Journal');
         expect(html).toContain('id="tribeStreetJournalList"');
+    });
+
+    it('labels the Green facilitator action trigger as New Proposal', () => {
+        const html = readFileSync(GREEN_FACILITATOR_HTML_PATH, 'utf8');
+
+        expect(html).toContain('id="newActionBtn"');
+        expect(html).toContain('New Proposal');
     });
 
     it('builds Tribe Street Journal entries from team capture events only', async () => {
