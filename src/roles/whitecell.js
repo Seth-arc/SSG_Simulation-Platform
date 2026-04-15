@@ -34,6 +34,7 @@ import {
 
 const logger = createLogger('WhiteCell');
 const WHITE_CELL_ALL_TEAMS_RECIPIENT = 'all';
+const WHITE_CELL_RED_TEAM_RECIPIENT = 'red';
 const TEAM_LABELS = Object.freeze(
     Object.fromEntries(TEAM_OPTIONS.map((team) => [team.id, team.label]))
 );
@@ -60,13 +61,6 @@ const WHITE_CELL_TIMELINE_NOTETAKER_TYPES = Object.freeze([
     'MOMENT',
     'QUOTE'
 ]);
-const WHITE_CELL_ACTION_SHARE_TARGETS = Object.freeze({
-    blue: {
-        recipient: 'red',
-        buttonLabel: 'Send to Red Team',
-        communicationType: 'GUIDANCE'
-    }
-});
 
 export const WHITE_CELL_DOM_IDS = [
     'startTimerBtn',
@@ -253,54 +247,6 @@ export function buildWhiteCellCommunicationRecipientOptions() {
     ];
 }
 
-function getActionTargets(action = {}) {
-    return Array.isArray(action.targets)
-        ? action.targets
-        : (action.target ? [action.target] : []);
-}
-
-export function getWhiteCellActionShareConfig(action = {}) {
-    const normalizedTeam = String(action?.team || '').trim().toLowerCase();
-    return WHITE_CELL_ACTION_SHARE_TARGETS[normalizedTeam] || null;
-}
-
-export function buildWhiteCellSharedActionMessage(action = {}, recipient = null) {
-    const targets = getActionTargets(action);
-    const sourceTeamLabel = getWhiteCellTeamLabel(action.team);
-    const recipientLabel = recipient ? getWhiteCellTeamLabel(recipient) : null;
-    const header = recipientLabel
-        ? `White Cell is sharing a ${sourceTeamLabel} action with ${recipientLabel}.`
-        : `White Cell is sharing a ${sourceTeamLabel} action.`;
-    const lines = [
-        header,
-        `Action: ${action.goal || action.title || 'Untitled action'}`,
-        `Mechanism: ${action.mechanism || 'Not specified'}`,
-        `Move / Phase: Move ${action.move || 1} / Phase ${action.phase || 1}`,
-        `Targets: ${targets.length ? targets.join(', ') : 'Not specified'}`,
-        `Sector: ${action.sector || 'Not specified'}`,
-        `Exposure: ${action.exposure_type || 'Not specified'}`,
-        `Expected Outcomes: ${action.expected_outcomes || action.description || 'Not specified'}`
-    ];
-
-    if (action.ally_contingencies) {
-        lines.push(`Ally Contingencies: ${action.ally_contingencies}`);
-    }
-
-    if (action.submitted_at) {
-        lines.push(`Submitted: ${formatDateTime(action.submitted_at)}`);
-    }
-
-    if (action.outcome) {
-        lines.push(`Outcome: ${action.outcome}`);
-    }
-
-    if (action.adjudication_notes) {
-        lines.push(`Adjudication Notes: ${action.adjudication_notes}`);
-    }
-
-    return lines.join('\n');
-}
-
 export function getWhiteCellTeamLabel(team = null) {
     if (team === 'white_cell') {
         return 'White Cell';
@@ -340,6 +286,35 @@ export function getWhiteCellFilterRoleLabel(role = null) {
     };
 
     return labels[role] || role || 'Unknown role';
+}
+
+export function canShareActionToRedTeam(action = {}) {
+    return action?.team === 'blue';
+}
+
+export function buildSharedActionCommunicationContent(action = {}) {
+    const targets = Array.isArray(action.targets)
+        ? action.targets
+        : (action.target ? [action.target] : []);
+    const targetLabel = targets.length ? targets.join(', ') : 'Not specified';
+    const expectedOutcomes = action.expected_outcomes || action.description || 'No expected outcomes recorded.';
+    const contentParts = [
+        'Blue Team action shared by White Cell',
+        `Title: ${action.goal || action.title || 'Untitled action'}`,
+        `Mechanism: ${action.mechanism || 'No mechanism'}`,
+        `Move: ${action.move || 1}`,
+        `Phase: ${action.phase || 1}`,
+        `Targets: ${targetLabel}`,
+        `Sector: ${action.sector || 'Not specified'}`,
+        `Exposure: ${action.exposure_type || 'Not specified'}`,
+        `Expected Outcomes: ${expectedOutcomes}`
+    ];
+
+    if (action.ally_contingencies) {
+        contentParts.push(`Ally Contingencies: ${action.ally_contingencies}`);
+    }
+
+    return contentParts.join(' | ');
 }
 
 export function getWhiteCellParticipantTeamFilterValue(participant = {}) {
@@ -1115,10 +1090,11 @@ export class WhiteCellController {
 
     renderActionCard(action, { showAdjudicateAction = false, includeOutcome = false } = {}) {
         const status = action.status || ENUMS.ACTION_STATUS.DRAFT;
-        const targets = getActionTargets(action);
+        const targets = Array.isArray(action.targets)
+            ? action.targets
+            : (action.target ? [action.target] : []);
         const expectedOutcomes = action.expected_outcomes || action.description || '';
         const targetLabel = targets.length ? targets.join(', ') : 'Not specified';
-        const shareActionConfig = getWhiteCellActionShareConfig(action);
         const submittedMarkup = action.submitted_at
             ? `
                 <p class="text-xs text-gray-500" style="margin-top: var(--space-2);">
@@ -1134,12 +1110,12 @@ export class WhiteCellController {
             : '';
         const actionButtons = [];
 
-        if (showAdjudicateAction) {
-            actionButtons.push(`<button class="btn btn-primary btn-sm adjudicate-btn" data-action-id="${action.id}">Adjudicate</button>`);
+        if (canShareActionToRedTeam(action)) {
+            actionButtons.push(`<button class="btn btn-secondary btn-sm share-action-to-red-btn" data-action-id="${action.id}">Send to Red Team</button>`);
         }
 
-        if (shareActionConfig) {
-            actionButtons.push(`<button class="btn btn-secondary btn-sm share-action-btn" data-action-id="${action.id}" data-share-recipient="${shareActionConfig.recipient}">${this.escapeHtml(shareActionConfig.buttonLabel)}</button>`);
+        if (showAdjudicateAction) {
+            actionButtons.push(`<button class="btn btn-primary btn-sm adjudicate-btn" data-action-id="${action.id}">Adjudicate</button>`);
         }
 
         return `
@@ -1178,26 +1154,94 @@ export class WhiteCellController {
     }
 
     bindActionCardButtons(container) {
-        if (this.isLeadOperator()) {
-            container.querySelectorAll('.adjudicate-btn').forEach((button) => {
-                button.addEventListener('click', () => {
-                    const actionId = button.dataset.actionId;
-                    const action = this.actions.find((candidate) => candidate.id === actionId);
-                    if (action) {
-                        this.showAdjudicateModal(action);
-                    }
-                });
-            });
-        }
-
-        container.querySelectorAll('.share-action-btn').forEach((button) => {
+        container.querySelectorAll('.share-action-to-red-btn').forEach((button) => {
             button.addEventListener('click', () => {
                 const actionId = button.dataset.actionId;
-                this.shareActionWithConfiguredTarget(actionId).catch((err) => {
-                    logger.error('Failed to share action from review card:', err);
-                });
+                const action = this.actions.find((candidate) => candidate.id === actionId);
+                if (action) {
+                    this.shareActionWithRedTeam(action).catch((err) => {
+                        logger.error('Failed to share action with Red Team:', err);
+                    });
+                }
             });
         });
+
+        if (!this.isLeadOperator()) {
+            return;
+        }
+
+        container.querySelectorAll('.adjudicate-btn').forEach((button) => {
+            button.addEventListener('click', () => {
+                const actionId = button.dataset.actionId;
+                const action = this.actions.find((candidate) => candidate.id === actionId);
+                if (action) {
+                    this.showAdjudicateModal(action);
+                }
+            });
+        });
+    }
+
+    async shareActionWithRedTeam(action) {
+        if (!canShareActionToRedTeam(action)) {
+            showToast({ message: 'Only Blue Team actions can be sent to Red Team from White Cell.', type: 'warning' });
+            return;
+        }
+
+        const sessionId = sessionStore.getSessionId();
+        if (!sessionId) return;
+
+        const actionTitle = action.goal || action.title || 'Untitled action';
+        const confirmed = await confirmModal({
+            title: 'Share with Red Team',
+            message: `Send \"${actionTitle}\" to Red Team as a White Cell communication?`,
+            confirmLabel: 'Send to Red Team',
+            variant: 'primary'
+        });
+
+        if (!confirmed) return;
+
+        const loader = showLoader({ message: 'Sharing action with Red Team...' });
+
+        try {
+            const gameState = this.getCurrentGameState();
+            const communication = await database.createCommunication({
+                session_id: sessionId,
+                from_role: 'white_cell',
+                to_role: WHITE_CELL_RED_TEAM_RECIPIENT,
+                type: 'GUIDANCE',
+                content: buildSharedActionCommunicationContent(action),
+                metadata: {
+                    shared_action_id: action.id,
+                    source_team: action.team,
+                    actor_role: this.getTimelineActorRole()
+                }
+            });
+            communicationsStore.updateFromServer('INSERT', communication);
+
+            const timelineEvent = await database.createTimelineEvent({
+                session_id: sessionId,
+                type: 'GUIDANCE',
+                content: `White Cell shared Blue Team action with Red Team: ${actionTitle}`,
+                metadata: {
+                    role: this.getTimelineActorRole(),
+                    shared_action_id: action.id,
+                    recipient: WHITE_CELL_RED_TEAM_RECIPIENT,
+                    source_team: action.team
+                },
+                team: 'white_cell',
+                move: gameState.move ?? 1,
+                phase: gameState.phase ?? 1
+            });
+            timelineStore.updateFromServer('INSERT', timelineEvent);
+
+            showToast({ message: 'Action shared with Red Team', type: 'success' });
+        } catch (err) {
+            logger.error('Failed to share action with Red Team:', err);
+            showToast({ message: 'Failed to share action with Red Team', type: 'error' });
+        } finally {
+            loader?.hide?.();
+            hideLoader();
+        }
     }
 
     showAdjudicateModal(action) {
@@ -1456,87 +1500,6 @@ export class WhiteCellController {
         }
     }
 
-    async sendCommunication({
-        recipient,
-        type = 'INJECT',
-        content,
-        metadata = {},
-        timelineContent = null,
-        loaderMessage = 'Sending communication...',
-        successMessage = 'Communication sent',
-        errorMessage = 'Failed to send communication'
-    } = {}) {
-        const sessionId = sessionStore.getSessionId();
-        if (!sessionId) {
-            return false;
-        }
-
-        const loader = showLoader({ message: loaderMessage });
-
-        try {
-            const gameState = this.getCurrentGameState();
-            const communication = await database.createCommunication({
-                session_id: sessionId,
-                from_role: 'white_cell',
-                to_role: recipient,
-                type,
-                content,
-                metadata
-            });
-            communicationsStore.updateFromServer('INSERT', communication);
-
-            const timelineEvent = await database.createTimelineEvent({
-                session_id: sessionId,
-                type,
-                content: timelineContent || `White Cell ${type.toLowerCase()} sent to ${this.formatCommunicationRecipient(recipient)}`,
-                metadata: {
-                    ...metadata,
-                    role: this.getTimelineActorRole()
-                },
-                team: 'white_cell',
-                move: gameState.move ?? 1,
-                phase: gameState.phase ?? 1
-            });
-            timelineStore.updateFromServer('INSERT', timelineEvent);
-
-            showToast({ message: successMessage, type: 'success' });
-            return true;
-        } catch (err) {
-            logger.error('Failed to send communication:', err);
-            showToast({ message: errorMessage, type: 'error' });
-            return false;
-        } finally {
-            hideLoader(loader);
-        }
-    }
-
-    async shareActionWithConfiguredTarget(actionId) {
-        const action = this.actions.find((candidate) => candidate.id === actionId);
-        const shareActionConfig = getWhiteCellActionShareConfig(action);
-
-        if (!action || !shareActionConfig) {
-            return false;
-        }
-
-        const sourceTeamLabel = this.formatTeamLabel(action.team);
-        const recipientLabel = this.formatCommunicationRecipient(shareActionConfig.recipient);
-
-        return this.sendCommunication({
-            recipient: shareActionConfig.recipient,
-            type: shareActionConfig.communicationType,
-            content: buildWhiteCellSharedActionMessage(action, shareActionConfig.recipient),
-            metadata: {
-                related_id: action.id,
-                shared_action_id: action.id,
-                shared_action_team: action.team
-            },
-            timelineContent: `White Cell shared ${sourceTeamLabel} action with ${recipientLabel}`,
-            loaderMessage: 'Sharing action...',
-            successMessage: `${sourceTeamLabel} action shared with ${recipientLabel}`,
-            errorMessage: 'Failed to share action'
-        });
-    }
-
     async handleCommunicationSubmit(event) {
         event.preventDefault();
 
@@ -1550,17 +1513,44 @@ export class WhiteCellController {
             return;
         }
 
-        const sent = await this.sendCommunication({
-            recipient,
-            type,
-            content,
-            metadata: {}
-        });
+        const sessionId = sessionStore.getSessionId();
+        if (!sessionId) return;
 
-        if (sent) {
+        const loader = showLoader({ message: 'Sending communication...' });
+
+        try {
+            const gameState = this.getCurrentGameState();
+            const communication = await database.createCommunication({
+                session_id: sessionId,
+                from_role: 'white_cell',
+                to_role: recipient,
+                type,
+                content,
+                metadata: {}
+            });
+            communicationsStore.updateFromServer('INSERT', communication);
+
+            const timelineEvent = await database.createTimelineEvent({
+                session_id: sessionId,
+                type,
+                content: `White Cell ${type.toLowerCase()} sent to ${this.formatCommunicationRecipient(recipient)}`,
+                metadata: { role: this.getTimelineActorRole() },
+                team: 'white_cell',
+                move: gameState.move ?? 1,
+                phase: gameState.phase ?? 1
+            });
+            timelineStore.updateFromServer('INSERT', timelineEvent);
+
             form.reset();
             document.getElementById('commRecipient').value = WHITE_CELL_ALL_TEAMS_RECIPIENT;
             document.getElementById('commType').value = 'INJECT';
+
+            showToast({ message: 'Communication sent', type: 'success' });
+        } catch (err) {
+            logger.error('Failed to send communication:', err);
+            showToast({ message: 'Failed to send communication', type: 'error' });
+        } finally {
+            hideLoader();
         }
     }
 

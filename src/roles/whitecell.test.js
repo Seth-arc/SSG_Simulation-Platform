@@ -2,6 +2,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const WHITECELL_HTML_PATH = new URL('../../teams/blue/whitecell.html', import.meta.url);
+const showToast = vi.fn();
+const showModal = vi.fn();
+const confirmModal = vi.fn();
+const showLoader = vi.fn(() => ({ hide: vi.fn() }));
+const hideLoader = vi.fn();
+
+vi.mock('../components/ui/Toast.js', () => ({
+    showToast
+}));
+
+vi.mock('../components/ui/Modal.js', () => ({
+    showModal,
+    confirmModal
+}));
+
+vi.mock('../components/ui/Loader.js', () => ({
+    showLoader,
+    hideLoader,
+    showInlineLoader: vi.fn(() => ({ hide: vi.fn() }))
+}));
 
 function escapeHtml(value) {
     return String(value)
@@ -87,6 +107,8 @@ async function loadWhiteCellModule() {
 
 describe('White Cell DOM contract', () => {
     afterEach(() => {
+        vi.restoreAllMocks();
+        vi.clearAllMocks();
         vi.resetModules();
         delete global.document;
         delete global.window;
@@ -353,11 +375,11 @@ describe('White Cell DOM contract', () => {
     });
 
     it('renders facilitator action details needed for White Cell adjudication', async () => {
-        const { WhiteCellController } = await loadWhiteCellModule();
+        const { WhiteCellController, buildSharedActionCommunicationContent } = await loadWhiteCellModule();
         global.document = createFakeDocument();
 
         const controller = new WhiteCellController();
-        const markup = controller.renderActionCard({
+        const blueAction = {
             id: 'action-77',
             goal: 'Stabilize port access',
             mechanism: 'Diplomatic pressure',
@@ -372,6 +394,15 @@ describe('White Cell DOM contract', () => {
             expected_outcomes: 'Secure a 72-hour shipping corridor.',
             ally_contingencies: 'Coordinate with customs union partners.',
             submitted_at: '2026-04-08T10:00:00.000Z'
+        };
+        const markup = controller.renderActionCard(blueAction, {
+            showAdjudicateAction: true,
+            includeOutcome: false
+        });
+        const greenMarkup = controller.renderActionCard({
+            ...blueAction,
+            id: 'action-78',
+            team: 'green'
         }, {
             showAdjudicateAction: true,
             includeOutcome: false
@@ -384,98 +415,86 @@ describe('White Cell DOM contract', () => {
         expect(markup).toContain('Ally Contingencies:</strong> Coordinate with customs union partners.');
         expect(markup).toContain('Submitted:</strong>');
         expect(markup).toContain('Send to Red Team');
+        expect(greenMarkup).not.toContain('Send to Red Team');
+        expect(buildSharedActionCommunicationContent(blueAction)).toContain('Blue Team action shared by White Cell');
+        expect(buildSharedActionCommunicationContent(blueAction)).toContain('Title: Stabilize port access');
     });
 
-    it('only renders the Red-team share shortcut for Blue-team actions', async () => {
+    it('sends Blue team actions to the Red team as White Cell communications', async () => {
         const { WhiteCellController } = await loadWhiteCellModule();
-        global.document = createFakeDocument();
-        const controller = new WhiteCellController();
+        const { database } = await import('../services/database.js');
+        const { sessionStore } = await import('../stores/session.js');
+        const { communicationsStore } = await import('../stores/communications.js');
+        const { timelineStore } = await import('../stores/timeline.js');
 
-        const blueMarkup = controller.renderActionCard({
-            id: 'action-blue',
+        global.document = createFakeDocument();
+        confirmModal.mockResolvedValue(true);
+
+        vi.spyOn(sessionStore, 'getSessionId').mockReturnValue('session-9');
+        vi.spyOn(sessionStore, 'getRole').mockReturnValue('whitecell_lead');
+        const createCommunication = vi.spyOn(database, 'createCommunication').mockResolvedValue({
+            id: 'comm-1',
+            to_role: 'red',
+            type: 'GUIDANCE',
+            content: 'shared action'
+        });
+        const createTimelineEvent = vi.spyOn(database, 'createTimelineEvent').mockResolvedValue({
+            id: 'timeline-1'
+        });
+        const communicationsUpdate = vi.spyOn(communicationsStore, 'updateFromServer').mockImplementation(() => {});
+        const timelineUpdate = vi.spyOn(timelineStore, 'updateFromServer').mockImplementation(() => {});
+
+        const controller = new WhiteCellController();
+        controller.operatorRole = 'lead';
+        controller.getCurrentGameState = vi.fn(() => ({ move: 3, phase: 2 }));
+
+        await controller.shareActionWithRedTeam({
+            id: 'action-77',
+            team: 'blue',
             goal: 'Stabilize port access',
             mechanism: 'Diplomatic pressure',
-            team: 'blue'
+            move: 2,
+            phase: 3,
+            targets: ['Port Authority'],
+            sector: 'Logistics',
+            exposure_type: 'Overt',
+            expected_outcomes: 'Secure a 72-hour shipping corridor.',
+            ally_contingencies: 'Coordinate with customs union partners.'
         });
-        const redMarkup = controller.renderActionCard({
-            id: 'action-red',
-            goal: 'Restrict shipping access',
-            mechanism: 'Tariff threat',
-            team: 'red'
-        });
 
-        expect(blueMarkup).toContain('Send to Red Team');
-        expect(redMarkup).not.toContain('Send to Red Team');
-    });
-
-    it('builds the Blue-action share payload for Red Team', async () => {
-        const { WhiteCellController } = await loadWhiteCellModule();
-        const controller = new WhiteCellController();
-        controller.actions = [
-            {
-                id: 'action-77',
-                goal: 'Stabilize port access',
-                mechanism: 'Diplomatic pressure',
-                team: 'blue',
-                move: 2,
-                phase: 3,
-                targets: ['Port Authority'],
-                sector: 'Logistics',
-                exposure_type: 'Overt',
-                expected_outcomes: 'Secure a 72-hour shipping corridor.',
-                ally_contingencies: 'Coordinate with customs union partners.'
-            }
-        ];
-        controller.sendCommunication = vi.fn().mockResolvedValue(true);
-
-        await controller.shareActionWithConfiguredTarget('action-77');
-
-        expect(controller.sendCommunication).toHaveBeenCalledWith(expect.objectContaining({
-            recipient: 'red',
-            type: 'GUIDANCE',
-            loaderMessage: 'Sharing action...',
-            successMessage: 'Blue Team action shared with Red Team',
-            errorMessage: 'Failed to share action',
-            timelineContent: 'White Cell shared Blue Team action with Red Team'
+        expect(confirmModal).toHaveBeenCalledWith(expect.objectContaining({
+            title: 'Share with Red Team',
+            confirmLabel: 'Send to Red Team'
         }));
-
-        const [payload] = controller.sendCommunication.mock.calls[0];
-        expect(payload.metadata).toMatchObject({
-            related_id: 'action-77',
-            shared_action_id: 'action-77',
-            shared_action_team: 'blue'
-        });
-        expect(payload.content).toContain('White Cell is sharing a Blue Team action with Red Team.');
-        expect(payload.content).toContain('Action: Stabilize port access');
-        expect(payload.content).toContain('Targets: Port Authority');
-        expect(payload.content).toContain('Expected Outcomes: Secure a 72-hour shipping corridor.');
-    });
-
-    it('binds the action share shortcut to the White Cell share handler', async () => {
-        const { WhiteCellController } = await loadWhiteCellModule();
-        const shareButton = {
-            dataset: { actionId: 'action-77' },
-            listeners: {},
-            addEventListener(type, callback) {
-                this.listeners[type] = callback;
-            }
-        };
-        const container = {
-            querySelectorAll(selector) {
-                if (selector === '.share-action-btn') {
-                    return [shareButton];
-                }
-
-                return [];
-            }
-        };
-
-        const controller = new WhiteCellController();
-        controller.shareActionWithConfiguredTarget = vi.fn().mockResolvedValue(true);
-
-        controller.bindActionCardButtons(container);
-        shareButton.listeners.click();
-
-        expect(controller.shareActionWithConfiguredTarget).toHaveBeenCalledWith('action-77');
+        expect(createCommunication).toHaveBeenCalledWith(expect.objectContaining({
+            session_id: 'session-9',
+            from_role: 'white_cell',
+            to_role: 'red',
+            type: 'GUIDANCE',
+            metadata: expect.objectContaining({
+                shared_action_id: 'action-77',
+                source_team: 'blue',
+                actor_role: 'whitecell_lead'
+            })
+        }));
+        expect(createCommunication.mock.calls[0][0].content).toContain('Blue Team action shared by White Cell');
+        expect(createCommunication.mock.calls[0][0].content).toContain('Title: Stabilize port access');
+        expect(communicationsUpdate).toHaveBeenCalledWith('INSERT', expect.objectContaining({ id: 'comm-1' }));
+        expect(createTimelineEvent).toHaveBeenCalledWith(expect.objectContaining({
+            session_id: 'session-9',
+            type: 'GUIDANCE',
+            content: 'White Cell shared Blue Team action with Red Team: Stabilize port access',
+            team: 'white_cell',
+            move: 3,
+            phase: 2,
+            metadata: expect.objectContaining({
+                role: 'whitecell_lead',
+                shared_action_id: 'action-77',
+                recipient: 'red',
+                source_team: 'blue'
+            })
+        }));
+        expect(timelineUpdate).toHaveBeenCalledWith('INSERT', expect.objectContaining({ id: 'timeline-1' }));
+        expect(showToast).toHaveBeenCalledWith({ message: 'Action shared with Red Team', type: 'success' });
     });
 });

@@ -4,6 +4,49 @@ import { readFileSync } from 'node:fs';
 const FACILITATOR_HTML_PATH = new URL('../../teams/blue/facilitator.html', import.meta.url);
 const GREEN_FACILITATOR_HTML_PATH = new URL('../../teams/green/facilitator.html', import.meta.url);
 
+function createFakeElement(id = null, tagName = 'div') {
+    let textContent = '';
+    let explicitInnerHtml = null;
+
+    return {
+        id,
+        tagName: tagName.toUpperCase(),
+        className: '',
+        get textContent() {
+            return textContent;
+        },
+        set textContent(value) {
+            textContent = value == null ? '' : String(value);
+            explicitInnerHtml = null;
+        },
+        get innerHTML() {
+            return explicitInnerHtml ?? textContent;
+        },
+        set innerHTML(value) {
+            explicitInnerHtml = value == null ? '' : String(value);
+        },
+        get outerHTML() {
+            const attributes = [];
+            if (this.id) {
+                attributes.push(`id="${this.id}"`);
+            }
+            if (this.className) {
+                attributes.push(`class="${this.className}"`);
+            }
+
+            return `<${tagName}${attributes.length ? ` ${attributes.join(' ')}` : ''}>${this.innerHTML}</${tagName}>`;
+        }
+    };
+}
+
+function createFakeDocument() {
+    return {
+        createElement(tagName) {
+            return createFakeElement(null, tagName);
+        }
+    };
+}
+
 const showToast = vi.fn();
 const showModal = vi.fn();
 const createTimelineEvent = vi.fn();
@@ -54,6 +97,7 @@ async function loadFacilitatorModule() {
 describe('Facilitator observer enforcement', () => {
     afterEach(() => {
         vi.clearAllMocks();
+        delete global.document;
         delete globalThis.__ESG_DISABLE_AUTO_INIT__;
     });
 
@@ -129,6 +173,24 @@ describe('Facilitator observer enforcement', () => {
 
         expect(html).toContain('id="newActionBtn"');
         expect(html).toContain('New Proposal');
+    });
+
+    it('does not render White Cell share controls in facilitator action cards', async () => {
+        const { FacilitatorController } = await loadFacilitatorModule();
+        global.document = createFakeDocument();
+
+        const controller = new FacilitatorController();
+        const markup = controller.renderActionCard({
+            id: 'action-1',
+            team: 'blue',
+            status: 'submitted',
+            goal: 'Stabilize port access',
+            mechanism: 'Diplomatic pressure',
+            move: 2,
+            phase: 3
+        });
+
+        expect(markup).not.toContain('Send to Red Team');
     });
 
     it('builds Tribe Street Journal entries from team capture events only', async () => {
